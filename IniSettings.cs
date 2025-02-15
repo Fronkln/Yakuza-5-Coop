@@ -1,11 +1,7 @@
-﻿using SharpDX.DirectInput;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Y5Coop
 {
@@ -15,15 +11,13 @@ namespace Y5Coop
         {
             get
             {           
-                Assembly assmb = Assembly.GetExecutingAssembly();
                 return Path.Combine(Mod.ModPath, "settings.ini");
             }
         }
 
         public static void Read()
         {
-            Assembly assmb = Assembly.GetExecutingAssembly();
-            Ini ini = new Ini(Path.Combine(Path.GetDirectoryName(assmb.Location), "settings.ini"));
+            Ini ini = new Ini(IniPath);
 
             Camera.Height = float.Parse(ini.GetValue("Height", "Camera", "1.5"), System.Globalization.CultureInfo.InvariantCulture);
             Camera.MinFOV = float.Parse(ini.GetValue("MinFOV", "Camera", "0.6"), System.Globalization.CultureInfo.InvariantCulture);
@@ -46,15 +40,6 @@ namespace Y5Coop
 
             if(!string.IsNullOrEmpty(missions))
                 Mod.BlacklistedMissions = missions.Split(',').Select(x => int.Parse(x.Trim())).ToArray();
-
-            PlayerInput.GuardButtonIdx = int.Parse(ini.GetValue("GuardButton", "Bindings", "6"));
-            PlayerInput.StanceButtonIdx = int.Parse(ini.GetValue("StanceButton", "Bindings", "7"));
-
-            PlayerInput.LightAttackButton = (JoystickOffset)Enum.Parse(typeof(JoystickOffset), ini.GetValue("LightAttackButton", "Bindings", "Buttons3"));
-            PlayerInput.HeavyAttackButton = (JoystickOffset)Enum.Parse(typeof(JoystickOffset), ini.GetValue("HeavyAttackButton", "Bindings", "Buttons0"));
-            PlayerInput.QuickstepButton = (JoystickOffset)Enum.Parse(typeof(JoystickOffset), ini.GetValue("QuickstepButton", "Bindings", "Buttons2"));
-            PlayerInput.GrabButton = (JoystickOffset)Enum.Parse(typeof(JoystickOffset), ini.GetValue("GrabButton", "Bindings", "Buttons1"));
-            PlayerInput.DragonRageButton = (JoystickOffset)Enum.Parse(typeof(JoystickOffset), ini.GetValue("DragonRageButton", "Bindings", "Buttons1"));
         }
     }
 }

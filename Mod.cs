@@ -1,30 +1,20 @@
 ﻿using MinHook;
-using SharpDX.DirectInput;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Y5Lib;
 
-//Crash 1: 140f69405
 namespace Y5Coop
 {
-    //141D9D980 dance battle player when on that mission
     public unsafe class Mod : Y5Mod
     {
 
         [DllImport("user32.dll")]
         public static extern int MessageBox(IntPtr hWnd, String text, String caption, int options);
-
-        private delegate void* DeviceListener_GetInput(void* a1);
-        private delegate bool Fighter_SomeMysteriousInputUpdate(void* a1, ulong arg1, ulong arg2);
 
         public static string ModPath;
 
@@ -50,10 +40,6 @@ namespace Y5Coop
         public static float TeleportDistance = 20;
 
         private static bool m_remakePlayer;
-
-        Fighter_SomeMysteriousInputUpdate test;
-
-
         private delegate ulong DancerDestructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5);
 
         DancerDestructor dieDancer;
@@ -84,27 +70,6 @@ namespace Y5Coop
             Thread thread = new Thread(InputThread);
             thread.Start();
 
-            IntPtr fighterInputUpdateAddr = Y5Lib.Unsafe.CPP.PatternSearch("40 56 41 57 48 81 EC ? ? ? ? C5 78 29 44 24 60");
-            IntPtr fighterInputUpdate2Addr = Y5Lib.Unsafe.CPP.PatternSearch("48 83 EC ? 8B 91 30 34 00 00 0F BA E2 ? 72 ?");
-
-            if (fighterInputUpdateAddr == IntPtr.Zero)
-            {
-                OE.LogError("Y5Coop - Couldn't find fighter input update function.");
-                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update function.", "Fatal Y5 Coop Error", 0);
-                Environment.Exit(0);
-            }
-
-            if (fighterInputUpdate2Addr == IntPtr.Zero)
-            {
-                OE.LogError("Y5Coop - Couldn't find fighter input update 2 function.");
-                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update 2 function.", "Fatal Y5 Coop Error", 0);
-                Environment.Exit(0);
-            }
-
-            /*
-            PlayerInput.m_controllerInputUpdate = engine.CreateHook<PlayerInput.FighterController_InputUpdate>(fighterInputUpdateAddr, PlayerInput.FighterController__InputUpdate);
-                        */
-            test = engine.CreateHook<Fighter_SomeMysteriousInputUpdate>(fighterInputUpdate2Addr, Test);
             dieDancer = engine.CreateHook<DancerDestructor>((IntPtr)0x1404335E0, Dancer_Destructor);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(Y5Lib.Unsafe.CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
@@ -119,12 +84,6 @@ namespace Y5Coop
             OE.LogInfo("Y5 Coop Init End");
         }
 
-        //If you do not route this to player1, game freezes when interacting with CCC
-        bool Test(void* fighter, ulong arg1, ulong arg2)
-        {
-            return test.Invoke((void*)ActionFighterManager.GetFighter(0).Pointer, arg1, arg2);
-        }
-
         void Reset()
         {
             m_coopPlayerIdx = -1;
@@ -137,7 +96,6 @@ namespace Y5Coop
 
         void Update()
         {
-
             if (CoopPlayerHandle.UID > 0)
             {
                 if (!ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
@@ -399,15 +357,6 @@ namespace Y5Coop
                     if (OE.IsKeyHeld(VirtualKey.Menu))
                         if (OE.IsKeyDown(VirtualKey.R))
                             IniSettings.Read();
-
-                if (OE.IsKeyHeld(VirtualKey.LeftControl))
-                {
-                    if (OE.IsKeyDown(VirtualKey.Y))
-                    {
-                        Thread thread = new Thread(PlayerInput.RemapThread);
-                        thread.Start();
-                    }
-                }
             }
         }
 
