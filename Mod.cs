@@ -24,7 +24,6 @@ namespace Y5Coop
         public static extern int MessageBox(IntPtr hWnd, String text, String caption, int options);
 
         private delegate void* DeviceListener_GetInput(void* a1);
-        private delegate void FighterController_InputUpdate(void* a1);
         private delegate bool Fighter_SomeMysteriousInputUpdate(void* a1, ulong arg1, ulong arg2);
 
         public static string ModPath;
@@ -102,7 +101,9 @@ namespace Y5Coop
                 Environment.Exit(0);
             }
 
+            /*
             PlayerInput.m_controllerInputUpdate = engine.CreateHook<PlayerInput.FighterController_InputUpdate>(fighterInputUpdateAddr, PlayerInput.FighterController__InputUpdate);
+                        */
             test = engine.CreateHook<Fighter_SomeMysteriousInputUpdate>(fighterInputUpdate2Addr, Test);
             dieDancer = engine.CreateHook<DancerDestructor>((IntPtr)0x1404335E0, Dancer_Destructor);
 
@@ -136,6 +137,7 @@ namespace Y5Coop
 
         void Update()
         {
+
             if (CoopPlayerHandle.UID > 0)
             {
                 if (!ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
@@ -287,6 +289,13 @@ namespace Y5Coop
             {
                 CoopPlayerHandle = new EntityHandle(ActionFighterManager.GetFighter(m_coopPlayerIdx));
                 CoopPlayer = ActionFighterManager.GetFighter(m_coopPlayerIdx);
+
+                IntPtr slot4 = ActionInputManager.GetInputSlot(4);
+
+                long* slotPtr = (long*)((long)CoopPlayer.InputController + 0x10);
+                //this causes crashes 15.02.2025 maybe return slot to normal somehow
+                *slotPtr = (long)slot4;
+
                 m_awaitingSpawn = false;
             }
             else if (CoopPlayerHandle.UID == 0 || !CoopPlayerHandle.IsValid() || (m_coopPlayerIdx > -1 && !ActionFighterManager.IsFighterPresent(m_coopPlayerIdx)))
@@ -418,8 +427,8 @@ namespace Y5Coop
         {
             IntPtr inputUpdateAddr = Y5Lib.Unsafe.CPP.PatternSearch("49 63 C7 49 0F 45 D6 48 69 C8 ? ? ? ? 48 03 CB E8 ? ? ? ? 8B 84 24 D0 01 00 00");
 
-            if (inputUpdateAddr != IntPtr.Zero)
-                Y5Lib.Unsafe.CPP.PatchMemory(inputUpdateAddr, 0xB8, 0x9, 0x0, 0x0, 0x0, 0x90, 0x90);
+            if (inputUpdateAddr != IntPtr.Zero) ;
+                //Y5Lib.Unsafe.CPP.PatchMemory(inputUpdateAddr, 0xB8, 0x9, 0x0, 0x0, 0x0, 0x90, 0x90);
 
             DisposeInfo p1Dispose = ActionFighterManager.Player.Dispose;
 

@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.XPath;
 using Y5Lib;
 
 namespace Y5Coop
@@ -14,6 +15,10 @@ namespace Y5Coop
     {
         private delegate void* DeviceListener_GetInput(void* a1);
         public delegate void FighterController_InputUpdate(void* a1);
+        private delegate void Game_UpdateInputDevice(IntPtr a1, long idk);
+        public delegate long Fighter_Destructor(IntPtr a1, long idk1, long idk2, long idk3);
+
+        private delegate long CInputDeviceSlot_UpdateData(IntPtr a1, long idk2, long idk3, long idk4);
 
         public static PadInputInfo* m_customPadInf;
         private static byte* weirdPadThing;
@@ -35,6 +40,64 @@ namespace Y5Coop
         public static JoystickOffset GrabButton = JoystickOffset.Buttons1;
         public static JoystickOffset DragonRageButton = JoystickOffset.Buttons1;
 
+        static CInputDeviceSlot_UpdateData m_updateDataOrig;
+        static Game_UpdateInputDevice m_origFunc;
+        static Fighter_Destructor m_origDestructor;
+
+        unsafe static long FighterDestructor(IntPtr addr, long idk1, long idk2, long idk3)
+        {
+            if(Mod.CoopPlayer != null && addr == Mod.CoopPlayer.Pointer)
+            {
+                long* slotPtr = (long*)((long)Mod.CoopPlayer.InputController + 0x10);
+                //this causes crashes 15.02.2025 maybe return slot to normal somehow
+                *slotPtr = (long)ActionInputManager.GetInputSlot(0);
+                OE.LogInfo("rip coop player");
+            }
+
+            OE.LogInfo("Death of a fighter");
+
+           return m_origDestructor(addr, idk1, idk2, idk3);
+        }
+
+        unsafe static void UpdateInputDevice(IntPtr addr, long idk)
+        {
+            
+            long* ptr = (long*)(0x142D67D70);
+            long obj = *ptr;
+
+            if(addr == (IntPtr)obj)
+            {
+                OE.LogInfo("talk tuah " + ((IntPtr)m_customPadInf).ToString("X"));
+                m_origFunc((IntPtr)m_customPadInf, idk);
+            }
+            
+
+            m_origFunc(addr, idk);
+        }
+        unsafe static long UpdateData(IntPtr addr, long idk2, long idk3, long idk4)
+        {
+            bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
+
+            if (!playerExists)
+                return m_updateDataOrig(addr, idk2, idk3, idk4);
+
+            uint* deviceTypePtr = (uint*)(addr + 0x12a4);
+            uint deviceType = *deviceTypePtr;
+
+            long result = 0;
+
+            if (deviceType == 0)
+            {
+                    *deviceTypePtr = 9;
+                    result = m_updateDataOrig(addr, idk2, idk3, idk4);
+                    *deviceTypePtr = 0;
+            }
+            else
+                result = m_updateDataOrig(addr, idk2, idk3, idk4);
+
+            return result;
+        }
+
         public static void Init()
         {
             m_customPadInf = (PadInputInfo*)Marshal.AllocHGlobal(2048);
@@ -54,6 +117,10 @@ namespace Y5Coop
             OE.LogInfo("Weird Pad Thing2  " + ((long)weirdPadThing).ToString("X"));
 
 
+            m_updateDataOrig = Mod.engine.CreateHook<CInputDeviceSlot_UpdateData>((IntPtr)0x140F4D070, UpdateData);
+            m_origDestructor = Mod.engine.CreateHook<Fighter_Destructor>((IntPtr)0x140B3F320, FighterDestructor);
+
+            /*
             IntPtr getInputAddr = Y5Lib.Unsafe.CPP.PatternSearch("48 8B 51 10 48 8D 41 18 48 89 82 C0 18 00 00 48");
 
             if (getInputAddr == IntPtr.Zero)
@@ -64,6 +131,20 @@ namespace Y5Coop
             }
 
             m_getInputDeleg = Mod.engine.CreateHook<DeviceListener_GetInput>(getInputAddr, GetInputDetour);
+
+            m_origFunc = Mod.engine.CreateHook<Game_UpdateInputDevice>((IntPtr)0x1412B3060, UpdateInputDevice);
+
+            */
+
+            IntPtr fighterInputUpdateAddr = Y5Lib.Unsafe.CPP.PatternSearch("40 56 41 57 48 81 EC ? ? ? ? C5 78 29 44 24 60");
+            if (fighterInputUpdateAddr == IntPtr.Zero)
+            {
+                OE.LogError("Y5Coop - Couldn't find fighter input update function.");
+                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update function.", "Fatal Y5 Coop Error", 0);
+                Environment.Exit(0);
+            }
+
+            m_controllerInputUpdate = Mod.engine.CreateHook<FighterController_InputUpdate>(fighterInputUpdateAddr, FighterController__InputUpdate);
 
             // Initialize DirectInput
             DirectInput = new DirectInput();
@@ -113,7 +194,6 @@ namespace Y5Coop
             // Acquire the joystick
             Joystick.Acquire();
         }
-
 
 
         static DeviceListener_GetInput m_getInputDeleg;
@@ -231,6 +311,7 @@ namespace Y5Coop
         }
 
 
+        
         public static FighterController_InputUpdate m_controllerInputUpdate;
         public static void FighterController__InputUpdate(void* a1)
         {
@@ -247,9 +328,14 @@ namespace Y5Coop
 
             if (Mod.CoopPlayer.Pointer == fighter.Pointer)
             {
-                GetPlayer2AttackInput();
-                fighter.InputFlags = Player2InputFlags;
-                Player2InputFlags = 0;
+                if ((Mod.CoopPlayer.InputFlags & 131072) != 0)
+                {
+                    ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                }
+                else
+                {
+                    ActionFighterManager.SetPlayer(0);
+                }
             }
         }
 
