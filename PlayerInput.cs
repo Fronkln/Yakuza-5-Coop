@@ -13,7 +13,6 @@ namespace Y5Coop
     {
         private delegate void* DeviceListener_GetInput(void* a1);
         public delegate void FighterController_InputUpdate(void* a1);
-        private delegate void Game_UpdateInputDevice(IntPtr a1, long idk);
         public delegate long Fighter_PreDestroy(IntPtr a1, long idk1, long idk2, long idk3);
         private delegate bool Fighter_SomeMysteriousInputUpdate(void* a1, ulong arg1, ulong arg2);
 
@@ -21,10 +20,13 @@ namespace Y5Coop
 
         static Fighter_SomeMysteriousInputUpdate m_origUnknownFighterInputUpdate;
         static CInputDeviceSlot_UpdateData m_updateDataOrig;
-        static Game_UpdateInputDevice m_origFunc;
         static Fighter_PreDestroy m_origDestructor;
 
-        //If you do not route this to player1, game freezes when interacting with CCC
+         public static InputDeviceType Player1InputType = InputDeviceType.Keyboard;
+        public static InputDeviceType Player2InputType = InputDeviceType.Controller;
+
+        //If we do not route this to player1, game freezes when interacting with CCC
+        //Bizzare bug that exists since Kenzan/Y3
         static bool FighterUnknownInputUpdate(void* fighter, ulong arg1, ulong arg2)
         {
             return m_origUnknownFighterInputUpdate.Invoke((void*)ActionFighterManager.GetFighter(0).Pointer, arg1, arg2);
@@ -34,20 +36,25 @@ namespace Y5Coop
         {
             if(Mod.CoopPlayer != null && addr == Mod.CoopPlayer.Pointer)
             {
-                long* slotPtr = (long*)((long)Mod.CoopPlayer.InputController + 0x10);
                 //if we dont restore input slot to original before we get destroyed
-                //its like a 70% of crashing! Unacceptable
-                *slotPtr = (long)ActionInputManager.GetInputSlot(0);
+                //its like a 70% chance of crashing! Unacceptable
+                ResetPlayer2Input();
             }
 
            return m_origDestructor(addr, idk1, idk2, idk3);
+        }
+
+        public static void ResetPlayer2Input()
+        {
+            if(Mod.CoopPlayer != null)
+                Mod.CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
         }
 
         unsafe static long UpdateData(IntPtr addr, long idk2, long idk3, long idk4)
         {
             bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
 
-            if (!playerExists)
+            if (!playerExists || ActionManager.IsPaused())
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
 
             uint* deviceTypePtr = (uint*)(addr + 0x12a4);
@@ -55,7 +62,10 @@ namespace Y5Coop
 
             long result = 0;
 
-            if (deviceType == 0)
+            //0 device type in input means take input from everything, keyboard and controller
+            //We don't want this. Otherwise player1 will be moved simultaneously by kbd and controller
+            //So we force it to be updated in keyboard mode (device type 9) if the coop player exists
+            if (deviceType == 0 && !Mod.IsDance())
             {
                     *deviceTypePtr = 9;
                     result = m_updateDataOrig(addr, idk2, idk3, idk4);
@@ -107,6 +117,10 @@ namespace Y5Coop
 
             m_controllerInputUpdate(a1);
 
+            //If we do not do this player 2 will not be able to perform heat actions.
+            //Heat action checking is only done on player 1!
+            //So what we do is make coop player the main player very briefly
+            //When we recieve triangle (heat action) input
             if (Mod.CoopPlayer.Pointer == fighter.Pointer)
             {
                 if ((Mod.CoopPlayer.InputFlags & 131072) != 0)
@@ -118,12 +132,6 @@ namespace Y5Coop
                     ActionFighterManager.SetPlayer(0);
                 }
             }
-        }
-        private static void SaveToIni()
-        {
-            Ini ini = new Ini(IniSettings.IniPath);
-
-            ini.Save();
         }
     }
 }
