@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Y5Lib;
+using Y5Lib.Unsafe;
 
 namespace Y5Coop
 {
@@ -15,15 +16,219 @@ namespace Y5Coop
         public delegate void FighterController_InputUpdate(void* a1);
         public delegate long Fighter_PreDestroy(IntPtr a1, long idk1, long idk2, long idk3);
         private delegate bool Fighter_SomeMysteriousInputUpdate(void* a1, ulong arg1, ulong arg2);
+        private delegate void GameInputUpdate(IntPtr a1, IntPtr a2, int a3, IntPtr a4);
 
         private delegate long CInputDeviceSlot_UpdateData(IntPtr a1, long idk2, long idk3, long idk4);
+        private delegate long CInputDeviceSlot_UpdateData2(IntPtr a1, long idk2, long idk3, long idk4);
 
         static Fighter_SomeMysteriousInputUpdate m_origUnknownFighterInputUpdate;
         static CInputDeviceSlot_UpdateData m_updateDataOrig;
+        static CInputDeviceSlot_UpdateData m_updateDataOrig2;
         static Fighter_PreDestroy m_origDestructor;
 
-         public static InputDeviceType Player1InputType = InputDeviceType.Keyboard;
-        public static InputDeviceType Player2InputType = InputDeviceType.Controller;
+        private static int* m_inputVals = (int*)0;
+        private static IntPtr m_inputValAssignmentAddr = IntPtr.Zero;
+        private static IntPtr m_activeDeviceAssignmentAddr = IntPtr.Zero;
+
+
+        public static bool IsInputCalibrated = false;
+
+        public static InputDeviceType Player1InputType = InputDeviceType.All;
+        public static InputDeviceType Player2InputType = InputDeviceType.All;
+
+        public static bool Player1ForcedInput = false;
+        public static bool Player2ForcedInput = false;
+
+        public static bool TwoControllerMode = false;
+        public static bool AllowPlayer1InputCalibration = false;
+        public static bool AllowPlayer2InputCalibration = true;
+
+        public static bool IsLegacyInput { get { return IsLegacyDualshock || IsLegacyGenericController; } }
+        public static bool IsLegacyGenericController = false;
+        public static bool IsLegacyDualshock = false;
+
+        public static void Init()
+        {
+            m_inputValAssignmentAddr = CPP.PatternSearch("89 07 FF C3 48 83 C7 ? 83 FB ? 7C ?");
+            m_inputVals = (int*)CPP.ResolveRelativeAddress(CPP.PatternSearch("48 8D 0D ? ? ? ? 49 89 73 10"), 7);
+            m_activeDeviceAssignmentAddr = CPP.PatternSearch("8D 42 FD 89 51 3C");
+            m_updateDataOrig = Mod.engine.CreateHook<CInputDeviceSlot_UpdateData>(CPP.PatternSearch("8B 81 A4 12 00 00"), UpdateData);
+            m_updateDataOrig2 = Mod.engine.CreateHook<CInputDeviceSlot_UpdateData>(CPP.PatternSearch("48 8B C4 48 89 58 08 57 48 81 EC ? ? ? ? C5 F8 29 70 E8 48 8B D9 48 8B 0D ? ? ? ?"), UpdateData2);
+            m_origDestructor = Mod.engine.CreateHook<Fighter_PreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 F8 01 00 00"), FighterDestructor);
+            m_origInputUpdate = Mod.engine.CreateHook<GameInputUpdate>((IntPtr)0x1412B3060, Game_Input_Update);
+
+
+            IntPtr fighterInputUpdateAddr = CPP.PatternSearch("40 56 41 57 48 81 EC ? ? ? ? C5 78 29 44 24 60");
+            if (fighterInputUpdateAddr == IntPtr.Zero)
+            {
+                OE.LogError("Y5Coop - Couldn't find fighter input update function.");
+                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update function.", "Fatal Y5 Coop Error", 0);
+                Environment.Exit(0);
+            }
+
+            IntPtr fighterInputUpdate2Addr = CPP.PatternSearch("48 83 EC ? 8B 91 30 34 00 00 0F BA E2 ? 72 ?");
+
+            if (fighterInputUpdate2Addr == IntPtr.Zero)
+            {
+                OE.LogError("Y5Coop - Couldn't find fighter input update 2 function.");
+                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update 2 function.", "Fatal Y5 Coop Error", 0);
+                Environment.Exit(0);
+            }
+
+            m_controllerInputUpdate = Mod.engine.CreateHook<FighterController_InputUpdate>(fighterInputUpdateAddr, FighterController__InputUpdate);
+            m_origUnknownFighterInputUpdate = Mod.engine.CreateHook<Fighter_SomeMysteriousInputUpdate>(fighterInputUpdate2Addr, FighterUnknownInputUpdate);
+        }
+
+
+
+        public static void Calibrate()
+        {
+            if (AllowPlayer1InputCalibration && !Player1ForcedInput)
+            {
+                for (int i = 1; i < 9; i++)
+                {
+                    InputDeviceType type = (InputDeviceType)i;
+
+                    if (IsInputSlotFree(type) && CheckIsThereAnyInput(type))
+                    {
+                        if (type != Player1InputType)
+                        {
+                            OE.LogInfo("Detected player 1 device type: " + type);
+                            OnInputCalibrated(type, true);
+                        }
+                    }
+                }
+            }
+
+            if (AllowPlayer2InputCalibration && !Player2ForcedInput)
+            {
+                for (int i = 1; i < 9; i++)
+                {
+                    InputDeviceType type = (InputDeviceType)i;
+
+                    if (IsInputSlotFree(type) && CheckIsThereAnyInput(type))
+                    {
+                        if (type != Player2InputType)
+                        {
+                            OE.LogInfo("Detected player 2 device type: " + type);
+                            OnInputCalibrated(type, false);
+                            IsInputCalibrated = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        public static void OnInputCalibrated(InputDeviceType input, bool isPlayer1)
+        {
+            DisableInputOverride();
+
+            if (isPlayer1)
+                Player1InputType = input;
+            else
+                Player2InputType = input;
+
+            Fighter fighter = null;
+
+            if (isPlayer1)
+                fighter = ActionFighterManager.Player;
+            else
+                fighter = Mod.CoopPlayer;
+
+            fighter.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(input));
+            EnableInputOverride();
+        }
+
+
+        public static bool IsInputSlotFree(InputDeviceType type)
+        {
+            return Player1InputType != type && Player2InputType != type;
+        }
+
+        public static bool CheckIsThereAnyInput(InputDeviceType type)
+        {
+            IntPtr controllerData = InputDeviceData.GetRawData(type);
+
+            short val = Marshal.ReadInt16(controllerData);
+
+            if (val != 0)
+                return true;
+
+            if (Marshal.ReadInt64(controllerData + 0x8) != 0)
+                return true;
+
+            if (Marshal.ReadInt64(controllerData + 0x18) != 0)
+                return true;
+
+            return false;
+        }
+
+
+        private static bool m_overriden = false;
+        public static void EnableInputOverride()
+        {
+            if (m_overriden)
+                return;
+
+            CPP.NopMemory(m_inputValAssignmentAddr, 2);
+
+            if (!IsLegacyInput)
+            {
+                m_inputVals[4] = m_inputVals[0];
+                m_inputVals[0] = 0;
+            }
+
+            if (IsLegacyDualshock)
+            {
+                m_inputVals[0] = 0;
+            }
+
+            m_overriden = true;
+        }
+
+        public static void DisableInputOverride()
+        {
+            if (!m_overriden)
+                return;
+
+            if (!IsLegacyInput)
+            {
+                m_inputVals[0] = m_inputVals[4];
+                m_inputVals[4] = 0;
+            }
+
+            if (IsLegacyDualshock)
+            {
+                m_inputVals[0] = 1000;
+            }
+
+            m_overriden = false;
+        }
+
+        //Prevent the game from changing the "active" device. Preventing UI buttons from changing
+        public static void AllowActiveDeviceAssignment() 
+        {
+           CPP.PatchMemory(m_activeDeviceAssignmentAddr, new byte[] { 0x8D, 0x42, 0xFD });
+        }
+
+        public static void PreventActiveDeviceAssignment()
+        {
+            CPP.PatchMemory(m_activeDeviceAssignmentAddr, new byte[] { 0xC3, 0x90, 0x90 });
+        }
+
+        private static GameInputUpdate m_origInputUpdate;
+        public static void Game_Input_Update(IntPtr a1, IntPtr a2, int a3, IntPtr a4)
+        {
+            InputDeviceType type = (InputDeviceType)Marshal.ReadInt32(a1 + 224);
+
+            if(type != Player1InputType)
+                PreventActiveDeviceAssignment();
+
+            m_origInputUpdate(a1, a2, a3, a4);
+
+            AllowActiveDeviceAssignment();
+        }
+
 
         //If we do not route this to player1, game freezes when interacting with CCC
         //Bizzare bug that exists since Kenzan/Y3
@@ -34,23 +239,23 @@ namespace Y5Coop
 
         unsafe static long FighterDestructor(IntPtr addr, long idk1, long idk2, long idk3)
         {
-            if(Mod.CoopPlayer != null && addr == Mod.CoopPlayer.Pointer)
+            if (Mod.CoopPlayer != null && addr == Mod.CoopPlayer.Pointer)
             {
                 //if we dont restore input slot to original before we get destroyed
                 //its like a 70% chance of crashing! Unacceptable
                 ResetPlayer2Input();
             }
 
-           return m_origDestructor(addr, idk1, idk2, idk3);
+            return m_origDestructor(addr, idk1, idk2, idk3);
         }
 
         public static void ResetPlayer2Input()
         {
-            if(Mod.CoopPlayer != null)
+            if (Mod.CoopPlayer != null)
                 Mod.CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
         }
 
-        unsafe static long UpdateData(IntPtr addr, long idk2, long idk3, long idk4)
+        private static long UpdateData(IntPtr addr, long idk2, long idk3, long idk4)
         {
             bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
 
@@ -67,9 +272,9 @@ namespace Y5Coop
             //So we force it to be updated in keyboard mode (device type 9) if the coop player exists
             if (deviceType == 0 && !Mod.IsDance())
             {
-                    *deviceTypePtr = 9;
-                    result = m_updateDataOrig(addr, idk2, idk3, idk4);
-                    *deviceTypePtr = 0;
+                *deviceTypePtr = 9;
+                result = m_updateDataOrig(addr, idk2, idk3, idk4);
+                *deviceTypePtr = 0;
             }
             else
                 result = m_updateDataOrig(addr, idk2, idk3, idk4);
@@ -77,32 +282,61 @@ namespace Y5Coop
             return result;
         }
 
-        public static void Init()
+        private static long UpdateData2(IntPtr addr, long idk2, long idk3, long idk4)
         {
-            m_updateDataOrig = Mod.engine.CreateHook<CInputDeviceSlot_UpdateData>((IntPtr)0x140F4D070, UpdateData);
-            m_origDestructor = Mod.engine.CreateHook<Fighter_PreDestroy>(Y5Lib.Unsafe.CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 F8 01 00 00"), FighterDestructor);
+            long result = m_updateDataOrig2(addr, idk2, idk3, idk4);
 
-            IntPtr fighterInputUpdateAddr = Y5Lib.Unsafe.CPP.PatternSearch("40 56 41 57 48 81 EC ? ? ? ? C5 78 29 44 24 60");
-            if (fighterInputUpdateAddr == IntPtr.Zero)
-            {
-                OE.LogError("Y5Coop - Couldn't find fighter input update function.");
-                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update function.", "Fatal Y5 Coop Error", 0);
-                Environment.Exit(0);
-            }
+            bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
 
-            IntPtr fighterInputUpdate2Addr = Y5Lib.Unsafe.CPP.PatternSearch("48 83 EC ? 8B 91 30 34 00 00 0F BA E2 ? 72 ?");
+            if (!playerExists || ActionManager.IsPaused())
+                return result;
 
-            if (fighterInputUpdate2Addr == IntPtr.Zero)
-            {
-                OE.LogError("Y5Coop - Couldn't find fighter input update 2 function.");
-                Mod.MessageBox(IntPtr.Zero, "Y5Coop - Couldn't find fighter input update 2 function.", "Fatal Y5 Coop Error", 0);
-                Environment.Exit(0);
-            }
+            uint* deviceTypePtr = (uint*)(addr + 0xE0);
 
-            m_controllerInputUpdate = Mod.engine.CreateHook<FighterController_InputUpdate>(fighterInputUpdateAddr, FighterController__InputUpdate);
-            m_origUnknownFighterInputUpdate = Mod.engine.CreateHook<Fighter_SomeMysteriousInputUpdate>(fighterInputUpdate2Addr, FighterUnknownInputUpdate);
+            PostInputUpdate(addr, *deviceTypePtr);
+            return result;
         }
-        
+
+        //Can be used to overwrite input
+        //Particularly used in dance battles for now.
+        private static void PostInputUpdate(IntPtr device, uint deviceType)
+        {
+            if (Mod.IsDance())
+                DanceBattleInputUpdate(device, deviceType);
+        }
+
+        private static void DanceBattleInputUpdate(IntPtr device, uint deviceType)
+        {
+            //Co-op dance battle: Player 1 cannot choose move direction
+            //Likewise, Player 2 cannot press button inputs. They must work together!
+
+            if (deviceType != 0)
+            {
+                if ((InputDeviceType)deviceType == Player1InputType || (InputDeviceType)deviceType == InputDeviceType.Keyboard)
+                {
+                    long* flags = (long*)device;
+                    long newVal = *flags;
+                    newVal &= ~285216768;
+                    newVal &= ~1140867072;
+                    newVal &= (int)(~2281734144);
+                    newVal &= ~570433536;
+
+                    *flags = newVal;
+                }
+                else if ((InputDeviceType)deviceType == Player2InputType)
+                {
+                    long* flags = (long*)device;
+                    long newVal = *flags;
+                    newVal &= ~8;
+                    newVal &= ~1;
+                    newVal &= ~4;
+                    newVal &= ~2;
+
+                    *flags = newVal;
+                }
+            }
+        }
+
         public static FighterController_InputUpdate m_controllerInputUpdate;
         public static void FighterController__InputUpdate(void* a1)
         {

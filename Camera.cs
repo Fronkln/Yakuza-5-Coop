@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Specialized;
+using System.Linq;
 using System.Reflection;
 using Y5Lib;
 
@@ -8,6 +9,9 @@ namespace Y5Coop
 {
     internal unsafe static class Camera
     {
+        public static bool UseClassicCamera = false;
+        public static bool UseClassicCameraBattle = false;
+
         public static float Height = 1.5f;
         public static float MinFOV = 0.6f;
         public static float MaxFOV = 1f;
@@ -17,8 +21,16 @@ namespace Y5Coop
 
         public static float MinFollowDistance = 5;
         public static float MaxFollowDistance = 12f;
-        public static float MinFollowOffset = 3.5f;
-        public static float MaxFollowOffset = 13f;
+
+        public static float MinFollowOffset = 1f;
+        public static float MaxFollowOffset = 12f;
+        public static float MinFollowOffsetBattle = 3.5f;
+        public static float MaxFollowOffsetBattle = 13f;
+
+        public static float FollowSpeed = 1f;
+
+        public static float MinCameraHeight = 1.4f;
+        public static float MaxCameraHeight = 2f;
 
         public delegate void CCameraFreeUpdate(IntPtr cam);
 
@@ -45,18 +57,50 @@ namespace Y5Coop
                 float t = ModMath.InverseLerp(MinFOVDistance, MaxFOVDistance, distance);
                 float targetFOV = ModMath.Lerp(MinFOV, MaxFOV, t);
 
-                float t2 = ModMath.InverseLerp(MinFollowOffset, MaxFollowOffset, distance);
-                float targetDist = ModMath.Lerp(MinFollowOffset, MaxFollowOffset, t);
+                float targetDist;
+
+                var enemies = ActionFighterManager.GetEnemies();
+
+                if (enemies.Length == 0)
+                {
+                    if(UseClassicCamera)
+                    {
+                        m_updateFuncOrig(cam);
+                        return;
+                    }
+
+                    targetDist = ModMath.Lerp(MinFollowOffset, MaxFollowOffset, t);
+                }
+                else
+                {
+                    Fighter nearestEnemy = enemies.OrderBy(x => Vector3.Distance(center, x.Position)).First();
+
+                    //Enemy is close enough to us and we are in a battle. Use battle offsets.
+                    if (Vector3.Distance(nearestEnemy.Position, center) <= 20)
+                    {
+                        if(UseClassicCameraBattle)
+                        {
+                            m_updateFuncOrig(cam);
+                            return;
+                        }
+
+                        targetDist = ModMath.Lerp(MinFollowOffsetBattle, MaxFollowOffsetBattle, t);
+                    }
+                    else
+                        targetDist = ModMath.Lerp(MinFollowOffset, MaxFollowOffset, t);
+                }
+
+                float cameraHeight = ModMath.Lerp(MinCameraHeight, MaxCameraHeight, t);
 
                 Vector3 dir = ModMath.Normalize((Mod.CoopPlayer.Position - p1.Position));
 
                 Matrix4x4 mtx = ActionFighterManager.GetFighter(0).HumanMotion.Matrix;
 
                 Vector3 followPos = mtx.Position;
-                followPos += new Vector3(0, 2, 0);
+                followPos += new Vector3(0, cameraHeight, 0);
                 followPos -= dir * targetDist;
 
-                camera.Position = Vector3.Lerp(camera.Position, followPos, 1f * ActionManager.UnscaledDeltaTime);
+                camera.Position = Vector3.Lerp(camera.Position, followPos, FollowSpeed * ActionManager.UnscaledDeltaTime);
 
                 camera.FieldOfView = ModMath.Lerp(camera.FieldOfView, targetFOV, ActionManager.DeltaTime * smoothSpeed);
 

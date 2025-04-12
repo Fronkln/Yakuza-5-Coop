@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Y5Lib;
+using Y5Lib.Unsafe;
 
 namespace Y5Coop
 {
@@ -18,7 +19,6 @@ namespace Y5Coop
 
         public static string ModPath;
 
-        //140A3320E - process **CONTROLLER** keypress, nop : no more controller input
         public static HookEngine engine = new HookEngine();
 
         public static Fighter CoopPlayer = null;
@@ -39,6 +39,9 @@ namespace Y5Coop
 
         public static float TeleportDistance = 20;
 
+        public static bool DebugInput = true;
+
+        private static float m_teleportDelay = 0;
         private static bool m_remakePlayer;
         private delegate ulong DancerDestructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5);
 
@@ -71,7 +74,8 @@ namespace Y5Coop
             Thread thread = new Thread(InputThread);
             thread.Start();
 
-            dieDancer = engine.CreateHook<DancerDestructor>((IntPtr)0x1404335E0, Dancer_Destructor);
+            //Warning: Really bad pattern
+            dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(Y5Lib.Unsafe.CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
 
@@ -93,16 +97,35 @@ namespace Y5Coop
             CoopPlayer = null;
             m_playerSpawnedDoOnce = false;
             CoopPlayerExistTime = 0;
+            PlayerInput.DisableInputOverride();
         }
 
         void Update()
         {
-            IntPtr controllerDat = InputDeviceData.GetRawData(InputDeviceType.Controller);
+            if (DebugInput)
+            {
+                for (int i = 1; i < 10; i++)
+                {
+                    InputDeviceType type = (InputDeviceType)i;
+                    if (PlayerInput.CheckIsThereAnyInput(type))
+                    {
+                        OE.LogInfo("Input detected on: " + i);
+                    }
+                }
+            }
 
-            if ((Marshal.ReadInt16(controllerDat) & 512) != 0)
+            IntPtr playerInputDat = InputDeviceData.GetRawData(PlayerInput.Player2InputType);
+
+            bool respawnInput = (Marshal.ReadInt16(playerInputDat) & 512) != 0 || (Marshal.ReadInt16(playerInputDat) & 256) != 0;
+
+            if (respawnInput && m_teleportDelay <= 0)
             {
                 DestroyAndRecreatePlayer2();
+                m_teleportDelay = 1;
             }
+
+            if (m_teleportDelay > 0)
+                m_teleportDelay -= ActionManager.DeltaTime;
 
             if (CoopPlayerHandle.UID > 0)
             {
@@ -124,6 +147,7 @@ namespace Y5Coop
                     return;
                 }
 
+                PlayerInput.Calibrate();
             }
             else
                 CoopPlayerDoesntExistTime += ActionManager.UnscaledDeltaTime;
@@ -173,8 +197,8 @@ namespace Y5Coop
             if (isDanceBattle)
             {
                 //Steam only 
-                long* dancePlrHaruka = (long*)0x141D9D980;
-                dancer = new Human() { Pointer = (IntPtr)(*dancePlrHaruka) };
+                //long* dancePlrHaruka = (long*)0x141D9D980;
+                dancer = ActionDanceBattleManager.GetDancer(0);  //new Human() { Pointer = (IntPtr)(*dancePlrHaruka) };
             }
             else if (isLiveBattle)
             {
@@ -201,6 +225,11 @@ namespace Y5Coop
             {
                 Fighter coopDancer = ActionFighterManager.GetFighter(0);
                 CoopPlayer = coopDancer;
+
+                if (PlayerInput.AllowPlayer1InputCalibration)
+                    PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
+
+                PlayerInput.OnInputCalibrated(PlayerInput.Player2InputType, false);
 
                 Matrix4x4 dancerMtx = dancer.HumanMotion.Matrix;
 
@@ -247,11 +276,15 @@ namespace Y5Coop
         {
             if (m_awaitingSpawn)
             {
-                CoopPlayerHandle = new EntityHandle(ActionFighterManager.GetFighter(m_coopPlayerIdx));
-                CoopPlayer = ActionFighterManager.GetFighter(m_coopPlayerIdx);
+                if (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
+                {
+                    CoopPlayerHandle = new EntityHandle(ActionFighterManager.GetFighter(m_coopPlayerIdx));
+                    CoopPlayer = ActionFighterManager.GetFighter(m_coopPlayerIdx);
 
-                CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.Controller));
-                m_awaitingSpawn = false;
+                    //ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
+                    CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
+                    m_awaitingSpawn = false;
+                }
             }
             else if (CoopPlayerHandle.UID == 0 || !CoopPlayerHandle.IsValid() || (m_coopPlayerIdx > -1 && !ActionFighterManager.IsFighterPresent(m_coopPlayerIdx)))
             {
@@ -267,6 +300,11 @@ namespace Y5Coop
             }
             else
             {
+
+                if (ActionManager.IsPaused())
+                    PlayerInput.DisableInputOverride();
+                else
+                    PlayerInput.EnableInputOverride();
             }
         }
 
@@ -345,17 +383,14 @@ namespace Y5Coop
                 if (OE.IsKeyHeld(VirtualKey.LeftShift))
                     if (OE.IsKeyDown(VirtualKey.P))
                         CreatePlayer2(false);
-                
-               
-
-                      //  CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.Keyboard));
-                // ActionFighterManager.DestroyFighter(m_coopPlayerIdx);
 
 
                 if (OE.IsKeyHeld(VirtualKey.LeftControl))
-                    if (OE.IsKeyHeld(VirtualKey.Menu))
-                        if (OE.IsKeyDown(VirtualKey.R))
-                            IniSettings.Read();
+                    if (OE.IsKeyDown(VirtualKey.R))
+                    {
+                        IniSettings.Read();
+                        OE.LogInfo("Reloaded ini settings");
+                    }
             }
         }
 
@@ -413,20 +448,23 @@ namespace Y5Coop
             inf.battleStartAnim.Set("eMID_NONE");
             inf.N0000453C = -1;
 
-            m_coopPlayerIdx = ActionFighterManager.SpawnCharacter(inf);
-            m_awaitingSpawn = true;
+            int idx = ActionFighterManager.SpawnCharacter(inf);
 
-            ActionFighterManager.SetPlayer(0);
+            if (idx < 0)
+                OE.LogError("Couldn't spawn co-op player!");
+            else
+            {
+                m_coopPlayerIdx = idx;
+                m_awaitingSpawn = true;
+                ActionFighterManager.SetPlayer(0);
 
-            OE.LogInfo("spawn");
+                OE.LogInfo("Waiting co-op player to spawn...");
+            }
         }
 
         private void CreatePlayer2ForDanceBattle(Human haruka)
         {
-            IntPtr inputUpdateAddr = Y5Lib.Unsafe.CPP.PatternSearch("49 63 C7 49 0F 45 D6 48 69 C8 ? ? ? ? 48 03 CB E8 ? ? ? ? 8B 84 24 D0 01 00 00");
-
-            if (inputUpdateAddr != IntPtr.Zero)
-                Y5Lib.Unsafe.CPP.PatchMemory(inputUpdateAddr, 0xB8, 0x9, 0x0, 0x0, 0x0, 0x90, 0x90);
+            IntPtr inputUpdateAddr = CPP.PatternSearch("49 63 C7 49 0F 45 D6 48 69 C8 ? ? ? ? 48 03 CB E8 ? ? ? ? 8B 84 24 D0 01 00 00");
 
             DisposeInfo inf = new DisposeInfo();
             inf.N000002CE = 64904;

@@ -2,6 +2,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using Y5Lib;
+using Y5Lib.Unsafe;
 
 namespace Y5Coop
 {
@@ -24,10 +25,12 @@ namespace Y5Coop
         {
             HActDir = new DirectoryInfo(Path.Combine(Mod.ModPath, "hact"));
 
-            ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>((IntPtr)0x0000000140DA0360,HActManager_ProcessHActCharacters);
-            RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>((IntPtr)0x140EBD7F0);
-            RegisterFighterOnHActDetour = Mod.engine.CreateHook<RegisterFighterHAct>((IntPtr)0X140EBD7F0, HAct_RegisterFighter);
-            PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(Y5Lib.Unsafe.CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
+            IntPtr hactRegisterFunc = CPP.PatternSearch("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC ? 41 8B F1 41 8B F8 48 8B DA");
+
+            ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 41 54 41 56 41 57 48 83 EC ? 8B 15 ? ? ? ?"),HActManager_ProcessHActCharacters);
+            RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
+            RegisterFighterOnHActDetour = Mod.engine.CreateHook<RegisterFighterHAct>(hactRegisterFunc, HAct_RegisterFighter);
+            PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
         }
         unsafe static ulong HActManager_PrepareHAct(IntPtr hactMan, string hactName, ulong idk3, ulong idk4, ulong idk5, ulong idk6)
         {
@@ -68,14 +71,10 @@ namespace Y5Coop
 
             uint hactID = *(uint*)(hactMan + 0x830);
             ulong result = ProcessHActCharacters(hactMan, idk1, idk2, idk3);
+
+            //Register the coop player onto hacts.
+            //Any hact that includes ZA_HUCOOP0 character will now have the coop player present
             RegisterFighterOnHAct(hactID, "ZA_HUCOOP0", Mod.m_coopPlayerIdx, 1);
-
-            //if(!ReplacePlayerWithPlayer2Once)
-            /*
-            else
-                RegisterFighterOnHAct(hactID, "ZA_HUP", Mod.m_coopPlayerIdx, 1);
-            */
-
 
             return result;
         }
