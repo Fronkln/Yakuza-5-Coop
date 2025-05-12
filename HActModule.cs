@@ -31,6 +31,11 @@ namespace Y5Coop
             RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
             RegisterFighterOnHActDetour = Mod.engine.CreateHook<RegisterFighterHAct>(hactRegisterFunc, HAct_RegisterFighter);
             PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
+
+
+            Mod.engine.EnableHook(ProcessHActCharacters);
+            Mod.engine.EnableHook(RegisterFighterOnHActDetour);
+            Mod.engine.EnableHook(PrepareHAct);
         }
         unsafe static ulong HActManager_PrepareHAct(IntPtr hactMan, string hactName, ulong idk3, ulong idk4, ulong idk5, ulong idk6)
         {

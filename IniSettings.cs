@@ -53,7 +53,6 @@ namespace Y5Coop
             Mod.DebugInput = byte.Parse(ini.GetValue("DebugLogInput", "Bindings", "0")) == 1;
 
             PlayerInput.Player1InputType = InputDeviceType.Keyboard;
-            PlayerInput.Player2InputType = InputDeviceType.Controller;
 
             PlayerInput.Player1ForcedInput = false;
             PlayerInput.Player2ForcedInput = false;
