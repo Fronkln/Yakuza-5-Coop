@@ -51,23 +51,11 @@ namespace Y5Coop
         private delegate ulong DancerDestructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5);
         private delegate ulong DancerDestructor2(IntPtr dancer);
         private delegate ulong FighterPreDestroy(IntPtr dancer);
-        private delegate ulong ActionFighterManagerDestroyFighter(IntPtr manager, int idx);
-
-        private static ActionFighterManagerDestroyFighter m_origDestroyFighter;
-        ulong ActionFighterManager_DestroyFighter(IntPtr manager, int idx)
-        {
-            if (idx + 1 == m_coopPlayerIdx)
-            {
-                //PlayerInput.ResetPlayer1Input();
-                PlayerInput.ResetPlayer2Input();
-            }
-
-            return m_origDestroyFighter(manager, idx);
-        }
 
         FighterPreDestroy m_fighterPreDestroyOrig;
         ulong Fighter_PreDestroy(IntPtr fighterPtr)
         {
+            //Resetting input like this is necessary to prevent crashes.
             if(fighterPtr == ActionFighterManager.GetFighter(0).Pointer || (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer.Pointer == fighterPtr))
             {
                 Fighter fighter = new Fighter() { Pointer = fighterPtr };
@@ -122,16 +110,13 @@ namespace Y5Coop
 
             OE.RegisterJob(Update, 10);
 
-            HActModule.CoopHActExists("a31130_chase_btlst");
-
             Thread thread = new Thread(InputThread);
             thread.Start();
 
             //Warning: Really bad pattern
             dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
             dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
-            m_origDestroyFighter = engine.CreateHook<ActionFighterManagerDestroyFighter>((IntPtr)0x1406F0AA0, ActionFighterManager_DestroyFighter);
-            m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>((IntPtr)0x140B3F320, Fighter_PreDestroy);
+            m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 ? ? ? ? 48 8B CB E8 ? ? ? ? 48 8B CB"), Fighter_PreDestroy);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
 
@@ -142,7 +127,6 @@ namespace Y5Coop
 
             engine.EnableHook(dieDancer);
             engine.EnableHook(dieLiveDancer);
-            engine.EnableHook(m_origDestroyFighter);
             engine.EnableHook(Camera.m_updateFuncOrig);
             engine.EnableHook(m_fighterPreDestroyOrig);
 
