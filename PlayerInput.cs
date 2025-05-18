@@ -255,15 +255,22 @@ namespace Y5Coop
         {
             if (Mod.CoopPlayer != null && addr == Mod.CoopPlayer.Pointer)
             {
-                if (Mod.CoopPlayer != null && Mod.m_coopPlayerIdx != 0)
-                    ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
-
                 //if we dont restore input slot to original before we get destroyed
                 //its like a 70% chance of crashing! Unacceptable
+                ResetPlayer1Input();
                 ResetPlayer2Input();
+                DisableInputPatches();
             }
 
             return m_origDestructor(addr, idk1, idk2, idk3);
+        }
+
+        public static void ResetPlayer1Input()
+        {
+            Fighter player = ActionFighterManager.Player;
+
+            if (player.UID != Mod.CoopPlayer.UID)
+                player.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
         }
 
         public static void ResetPlayer2Input()
@@ -377,7 +384,8 @@ namespace Y5Coop
             //When we recieve triangle (heat action) input
             if (Mod.CoopPlayer.Pointer == fighter.Pointer)
             {
-                if ((Mod.CoopPlayer.InputFlags & 131072) != 0)
+
+                if (Mod.IsBattle() && (Mod.CoopPlayer.InputFlags & 131072) != 0)
                 {
                     ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
                 }

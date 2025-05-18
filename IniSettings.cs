@@ -18,6 +18,8 @@ namespace Y5Coop
         {
             Ini ini = new Ini(IniPath);
 
+            Mod.CoopPlayerCommandset = ini.GetValue("Player2Moveset", "Combat", "");
+
             Camera.UseClassicCamera = byte.Parse(ini.GetValue("UseClassicCamera", "Camera", "0")) == 1;
             Camera.UseClassicCameraBattle = byte.Parse(ini.GetValue("UseClassicCameraBattle", "Camera", "0")) == 1;
 

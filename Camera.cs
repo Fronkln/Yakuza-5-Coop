@@ -43,6 +43,11 @@ namespace Y5Coop
                 return;
             }
 
+            int playerIdx = ActionFighterManager.Player.Index;
+
+            //Keep focus on player 1
+            ActionFighterManager.SetPlayer(0);
+
             CameraBase camera = new CameraBase() { Pointer = cam };
 
             if (Mod.CoopPlayer != null)
@@ -66,6 +71,7 @@ namespace Y5Coop
                     if(UseClassicCamera)
                     {
                         m_updateFuncOrig(cam);
+                        ActionFighterManager.SetPlayer(playerIdx);
                         return;
                     }
 
@@ -81,6 +87,7 @@ namespace Y5Coop
                         if(UseClassicCameraBattle)
                         {
                             m_updateFuncOrig(cam);
+                            ActionFighterManager.SetPlayer(playerIdx);
                             return;
                         }
 
@@ -122,6 +129,8 @@ namespace Y5Coop
             {
                 //m_updateFuncOrig(cam);
             }
+
+            ActionFighterManager.SetPlayer(playerIdx);
         }
     }
 }

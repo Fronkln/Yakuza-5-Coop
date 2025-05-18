@@ -41,11 +41,42 @@ namespace Y5Coop
 
         public static bool DebugInput = true;
 
+        public static string CoopPlayerCommandset = "";
+
         private static float m_teleportDelay = 0;
         private static bool m_remakePlayer;
         private static bool m_dontRespawnPlayerThisMissionDoOnce = false;
+        private static bool m_battleStartRecreatePlayer = false;
+        private static bool m_btlstDecided = false;
         private delegate ulong DancerDestructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5);
         private delegate ulong DancerDestructor2(IntPtr dancer);
+        private delegate ulong FighterPreDestroy(IntPtr dancer);
+        private delegate ulong ActionFighterManagerDestroyFighter(IntPtr manager, int idx);
+
+        private static ActionFighterManagerDestroyFighter m_origDestroyFighter;
+        ulong ActionFighterManager_DestroyFighter(IntPtr manager, int idx)
+        {
+            if (idx + 1 == m_coopPlayerIdx)
+            {
+                //PlayerInput.ResetPlayer1Input();
+                PlayerInput.ResetPlayer2Input();
+            }
+
+            return m_origDestroyFighter(manager, idx);
+        }
+
+        FighterPreDestroy m_fighterPreDestroyOrig;
+        ulong Fighter_PreDestroy(IntPtr fighterPtr)
+        {
+            if(fighterPtr == ActionFighterManager.GetFighter(0).Pointer || (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer.Pointer == fighterPtr))
+            {
+                Fighter fighter = new Fighter() { Pointer = fighterPtr };
+                fighter.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
+            }
+
+            return m_fighterPreDestroyOrig(fighterPtr);
+        }
+
 
         DancerDestructor dieDancer;
         ulong Dancer_Destructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5)
@@ -91,12 +122,16 @@ namespace Y5Coop
 
             OE.RegisterJob(Update, 10);
 
+            HActModule.CoopHActExists("a31130_chase_btlst");
+
             Thread thread = new Thread(InputThread);
             thread.Start();
 
             //Warning: Really bad pattern
             dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
-            dieLiveDancer = engine.CreateHook<DancerDestructor2>((IntPtr)CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
+            dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
+            m_origDestroyFighter = engine.CreateHook<ActionFighterManagerDestroyFighter>((IntPtr)0x1406F0AA0, ActionFighterManager_DestroyFighter);
+            m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>((IntPtr)0x140B3F320, Fighter_PreDestroy);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
 
@@ -107,6 +142,9 @@ namespace Y5Coop
 
             engine.EnableHook(dieDancer);
             engine.EnableHook(dieLiveDancer);
+            engine.EnableHook(m_origDestroyFighter);
+            engine.EnableHook(Camera.m_updateFuncOrig);
+            engine.EnableHook(m_fighterPreDestroyOrig);
 
             OE.LogInfo("Y5 Coop Init End");
         }
@@ -120,6 +158,7 @@ namespace Y5Coop
             m_playerSpawnedDoOnce = false;
             CoopPlayerExistTime = 0;
             PlayerInput.DisableInputOverride();
+            OnCoopPlayerInvalid();
         }
 
         void Update()
@@ -140,7 +179,7 @@ namespace Y5Coop
 
             bool respawnInput = (Marshal.ReadInt16(playerInputDat) & 512) != 0 || (Marshal.ReadInt16(playerInputDat) & 256) != 0;
 
-            if (respawnInput && m_teleportDelay <= 0)
+            if (respawnInput && m_teleportDelay <= 0 && ActionHActManager.Current.Pointer != IntPtr.Zero)
             {
                 DestroyAndRecreatePlayer2();
                 m_teleportDelay = 1;
@@ -233,7 +272,7 @@ namespace Y5Coop
                         dancer = LiveBtlPlayer.Current;
                 if (dancer.Pointer == IntPtr.Zero)
                     dancer = ActionLiveBattleManager.Current;
-                
+
 
                 PlayerInput.DisableInputPatches();
             }
@@ -317,6 +356,12 @@ namespace Y5Coop
             PlayerInput.EnableInputPatches();
         }
 
+        private void OnCoopPlayerInvalid()
+        {
+            m_battleStartRecreatePlayer = false;
+            m_btlstDecided = false;
+        }
+
         private void NormalUpdate()
         {
             if (m_awaitingSpawn)
@@ -345,13 +390,66 @@ namespace Y5Coop
                     PlayerInput.DisableInputOverride();
                 else
                     PlayerInput.EnableInputOverride();
+
+                if (IsBattle())
+                {
+                    SetPlayer2Commandset();
+
+                    if (ActionFighterManager.Player.HumanMotion.CurrentAnimation.ToString().Contains("btlst"))
+                    {
+                        if (!m_battleStartRecreatePlayer)
+                        {
+                            DestroyAndRecreatePlayer2();
+                            m_battleStartRecreatePlayer = true;
+                            ActionFighterManager.SetPlayer(m_coopPlayerIdx);
+                        }
+                    }
+
+                    if (!m_btlstDecided)
+                    {
+                        if (CoopPlayer != null && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
+                        {
+
+                            if (CoopPlayer.ModeManager.Current.Name == "WaitStartMotion")
+                            {
+                                unsafe
+                                {
+                                    MotionID[] p2Anims = new MotionID[]
+                                    {
+                                        MotionID.E_SUG_CMB_b_01,
+                                        MotionID.E_SUG_CMB_b_02,
+                                        MotionID.E_SUG_CMB_a_01,
+                                    };
+
+                                    FighterMode mode = CoopPlayer.ModeManager.Current;
+                                    int* battleStartAnimationID = (int*)(mode.Pointer + 0x90);
+                                    *battleStartAnimationID = (int)p2Anims[new Random().Next(0, p2Anims.Length)];
+
+                                    m_btlstDecided = true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
 
+        private void SetPlayer2Commandset()
+        {
+            if(!string.IsNullOrEmpty(CoopPlayerCommandset))
+                CoopPlayer.ModeManager.SetCommandset(CoopPlayerCommandset);
+        }
+
         public bool CanCreate()
         {
             return !m_dontRespawnPlayerThisMissionDoOnce && !BlacklistedMissions.Contains((int)SequenceManager.MissionID);
+        }
+
+        public static bool IsBattle()
+        {
+            uint mission = SequenceManager.MissionID;
+            return mission == 400 || mission == 408;
         }
 
         public static bool IsChase()
@@ -435,10 +533,12 @@ namespace Y5Coop
                         OE.LogInfo("Reloaded ini settings");
                     }
 
-                if(OE.IsKeyHeld(VirtualKey.LeftControl))
+                if (OE.IsKeyHeld(VirtualKey.LeftControl))
                 {
                     if (OE.IsKeyDown(VirtualKey.Z))
-                        FixupTest();
+                        if (CoopPlayer != null && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
+                            CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
+                        //FixupTest();
                 }
 #endif
             }
@@ -458,7 +558,7 @@ namespace Y5Coop
             {
                 DestroyPlayer2();
                 m_remakePlayer = true;
-     
+
             }
         }
 
@@ -493,16 +593,21 @@ namespace Y5Coop
                 if (IsChase())
                     inf.spawnPosition = ActionFighterManager.Player.Position + -ActionFighterManager.Player.HumanMotion.Matrix.ForwardDirection;
                 else
+                    //  inf.spawnPosition = ActionFighterManager.Player.Position + -ActionFighterManager.Player.HumanMotion.Matrix.LeftDirection;
+
                     inf.spawnPosition = ActionFighterManager.Player.Position + new Vector3(1, 0, 0);
             }
             else
             {
-                inf.spawnPosition = ActionFighterManager.Player.Position + -ActionFighterManager.Player.HumanMotion.Matrix.ForwardDirection * 0.65f;
+                if (IsBattle())
+                    inf.spawnPosition = ActionFighterManager.Player.Position + ActionFighterManager.Player.HumanMotion.Matrix.LeftDirection * 1.2f;
+                else
+                    inf.spawnPosition = ActionFighterManager.Player.Position + -ActionFighterManager.Player.HumanMotion.Matrix.ForwardDirection * 0.65f;
             }
 
 
             inf.N0000054E = p1Dispose.N0000054E;
-            inf.battleStartAnim.Set("eMID_NONE");
+            inf.battleStartAnim.Set("P_btlst_stand_poki");
             inf.N0000453C = -1;
 
             int idx = ActionFighterManager.SpawnCharacter(inf);
