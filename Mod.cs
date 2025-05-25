@@ -43,6 +43,9 @@ namespace Y5Coop
 
         public static string CoopPlayerCommandset = "";
 
+        //Fighter command and property.bin belongs to our mod
+        public static bool IsIchibanMovesetEnabled;
+
         private static float m_teleportDelay = 0;
         private static bool m_remakePlayer;
         private static bool m_dontRespawnPlayerThisMissionDoOnce = false;
@@ -51,6 +54,7 @@ namespace Y5Coop
         private delegate ulong DancerDestructor(IntPtr dancer, byte idk, ulong idk2, ulong idk3, ulong idk4, ulong idk5);
         private delegate ulong DancerDestructor2(IntPtr dancer);
         private delegate ulong FighterPreDestroy(IntPtr dancer);
+        private unsafe delegate void FighterModeEquipUpdate(IntPtr fighterMode);
 
         FighterPreDestroy m_fighterPreDestroyOrig;
         ulong Fighter_PreDestroy(IntPtr fighterPtr)
@@ -63,6 +67,18 @@ namespace Y5Coop
             }
 
             return m_fighterPreDestroyOrig(fighterPtr);
+        }
+
+        private static FighterModeEquipUpdate m_fighterModeEquipUpdateOrig;
+        private static void FighterMode_Equip_Update(IntPtr fighterModePtr)
+        {
+            FighterMode mode = new FighterMode() { Pointer = fighterModePtr };
+            Fighter fighter = mode.Fighter;
+
+            if (CoopPlayerHandle.IsValid() && fighter.Index == m_coopPlayerIdx)
+                ActionFighterManager.SetPlayer(m_coopPlayerIdx);
+
+            m_fighterModeEquipUpdateOrig.Invoke(fighterModePtr);
         }
 
 
@@ -117,6 +133,7 @@ namespace Y5Coop
             dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
             dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
             m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 ? ? ? ? 48 8B CB E8 ? ? ? ? 48 8B CB"), Fighter_PreDestroy);
+            m_fighterModeEquipUpdateOrig = engine.CreateHook<FighterModeEquipUpdate>(CPP.PatternSearch("48 89 5C 24 ? 57 48 83 EC ? 48 8B F9 48 89 74 24"), FighterMode_Equip_Update);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
 
@@ -129,6 +146,24 @@ namespace Y5Coop
             engine.EnableHook(dieLiveDancer);
             engine.EnableHook(Camera.m_updateFuncOrig);
             engine.EnableHook(m_fighterPreDestroyOrig);
+            engine.EnableHook(m_fighterModeEquipUpdateOrig);
+
+            //Replace handshake guard with Ichiban
+            IntPtr handshakeGuardModelName = CPP.ResolveRelativeAddress(CPP.PatternSearch("8D 4A 06 E8 ? ? ? ? E8 ? ? ? ? B9 50 17 00 00 E8") + 0x52, 7);
+            CPP.PatchMemory(handshakeGuardModelName, System.Text.Encoding.ASCII.GetBytes("c_am_ichiban_tx_on"));
+
+
+            //dont ask
+            System.Timers.Timer timer = new System.Timers.Timer();
+            timer.Interval = 100;
+            timer.AutoReset = false;
+            timer.Elapsed += delegate
+            {
+                string cfcPath = Parless.GetFilePath("data/fighter/command/fighter_command.cfc");
+                string propBinPath = Parless.GetFilePath("data/motion/property.bin");
+                IsIchibanMovesetEnabled = cfcPath.Contains("Y5Coop") && propBinPath.Contains("Y5Coop");
+            };
+            timer.Enabled = true;
 
             OE.LogInfo("Y5 Coop Init End");
         }
@@ -241,9 +276,7 @@ namespace Y5Coop
 
             if (isDanceBattle)
             {
-                //Steam only 
-                //long* dancePlrHaruka = (long*)0x141D9D980;
-                dancer = ActionDanceBattleManager.GetDancer(0);  //new Human() { Pointer = (IntPtr)(*dancePlrHaruka) };
+                dancer = ActionDanceBattleManager.GetDancer(0);
             }
             else if (isLiveBattle)
             {
@@ -338,6 +371,25 @@ namespace Y5Coop
                 PlayerInput.FuckedUpPlayer1WorkAround = true;
 
             PlayerInput.EnableInputPatches();
+            //LoadIchibanResources();
+        }
+
+        private void LoadIchibanResources()
+        {
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_01");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_02");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_03");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_04");
+
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_01_fin");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_02_fin");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_03_fin");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_04_fin");
+
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_01_finw");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_02_finw");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_03_finw");
+            ActionMotionManager.LoadGMT("p_ich_btl_sud_ath_04_finw");
         }
 
         private void OnCoopPlayerInvalid()
@@ -421,8 +473,14 @@ namespace Y5Coop
 
         private void SetPlayer2Commandset()
         {
-            if(!string.IsNullOrEmpty(CoopPlayerCommandset))
-                CoopPlayer.ModeManager.SetCommandset(CoopPlayerCommandset);
+            if (string.IsNullOrEmpty(CoopPlayerCommandset))
+                return;
+
+            //another property bin/cfc changing mod active
+            if (CoopPlayerCommandset == "ichiban" && !IsIchibanMovesetEnabled)
+                return;
+
+             CoopPlayer.ModeManager.SetCommandset(CoopPlayerCommandset);
         }
 
         public bool CanCreate()
@@ -645,6 +703,9 @@ namespace Y5Coop
 
             if (playerModel.Contains("saejima_g"))
                 return "c_cm_ichiban_g";
+
+            if(playerModel == "c_cw_haruka_w")
+                return "c_cm_ichiban_tx_on";
 
             if (playerModel.Contains("haruka"))
                 return "c_cm_ichiban_haruka";

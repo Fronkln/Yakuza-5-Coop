@@ -52,6 +52,8 @@ namespace Y5Coop
                     .Where(line => !string.IsNullOrWhiteSpace(line))
                     .ToArray();
 
+                m_hactCoopBlacklist.Clear();
+
                 foreach(string str in cleanedLines)
                     m_hactCoopBlacklist.Add(str.ToLowerInvariant());
             }
@@ -66,12 +68,10 @@ namespace Y5Coop
             PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
 
 
-            m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>((IntPtr)0x140B797F0, Invoke_Hact);
-          //  m_origProcRegisters = Mod.engine.CreateHook<CActionHActChpManagerProcessRegisters>((IntPtr)0x140DA0360, CActionHActChpManager_ProcessRegisters);
-            m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>((IntPtr)0x140EBA020, Preload_HAct);
+            m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);       
+            m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
 
             Mod.engine.EnableHook(m_invokeHactOrig);
-            //Mod.engine.EnableHook(m_origProcRegisters);
             Mod.engine.EnableHook(m_origPreloadHAct);
 
             Mod.engine.EnableHook(ProcessHActCharacters);
@@ -84,14 +84,8 @@ namespace Y5Coop
         public static bool CoopHActExists(string hactName)
         {
             string path = "data/hact/" + hactName + "_coop.par";
-
-            Marshal.Copy(new byte[256], 0, m_hactNameBuff, 256);
-
-            byte[] strBuf = Encoding.ASCII.GetBytes(path);
-            Marshal.Copy(strBuf, 0, m_hactNameBuff, strBuf.Length);
-            string result = Parless.GetFilePath(m_hactNameBuff);
-            OE.LogInfo(Directory.GetCurrentDirectory());
-
+            string result = Parless.GetFilePath(path);
+ 
             bool exists = false;
 
             if (File.Exists(result) && result.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))
@@ -144,6 +138,7 @@ namespace Y5Coop
                 if (Directory.Exists(Path.Combine(HActDir.FullName, coopVariant)))
                     hactName = coopVariant;
             }
+
 
             return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
         }
