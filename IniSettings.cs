@@ -19,6 +19,8 @@ namespace Y5Coop
             Ini ini = new Ini(IniPath);
 
             Mod.CoopPlayerCommandset = ini.GetValue("Player2Moveset", "Combat", "");
+            Mod.AllyMode = byte.Parse(ini.GetValue("AIControlled", "General", "0")) == 1;
+            Mod.DestroyP2OnCCC = byte.Parse(ini.GetValue("DestroyOnTalk", "General", "0")) == 1;
 
             Camera.UseClassicCamera = byte.Parse(ini.GetValue("UseClassicCamera", "Camera", "0")) == 1;
             Camera.UseClassicCameraBattle = byte.Parse(ini.GetValue("UseClassicCameraBattle", "Camera", "0")) == 1;

@@ -44,7 +44,8 @@ namespace Y5Coop
             }
 
             int playerIdx = ActionFighterManager.Player.Index;
-
+            int focusIdx = playerIdx;
+        
             //Keep focus on player 1
             ActionFighterManager.SetPlayer(0);
 
@@ -52,6 +53,14 @@ namespace Y5Coop
 
             if (Mod.CoopPlayer != null)
             {
+
+                if (PlayerInput.IsKBD(PlayerInput.Player1InputType))
+                    focusIdx = playerIdx;
+                else if (PlayerInput.IsKBD(PlayerInput.Player2InputType))
+                    focusIdx = Mod.CoopPlayer.Index;
+
+                ActionFighterManager.SetPlayer(focusIdx);
+
                 Fighter p1 = ActionFighterManager.GetFighter(0);
 
                 Vector3 center = (p1.Position + Mod.CoopPlayer.Position) / 2f;

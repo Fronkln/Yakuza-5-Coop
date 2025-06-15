@@ -71,6 +71,10 @@ namespace Y5Coop
             m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);       
             m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
 
+            //Remove useless checks in hact.chp for targets that dont exist (greater than 6)
+            //No target in hact chp is ever greater than 6 in vanilla game so we can do this funny party trick for Y5 Co-op
+            CPP.PatchMemory(CPP.PatternSearch("FF 90 ? ? ? ? 85 C0 75 ? 48 8B 03 48 8B CB FF 90 ? ? ? ? 85 C0 0F 85"), new byte[] { 0xB8, 0x01, 0x0, 0x0, 0x0, 0x90 });
+
             Mod.engine.EnableHook(m_invokeHactOrig);
             Mod.engine.EnableHook(m_origPreloadHAct);
 
@@ -139,7 +143,6 @@ namespace Y5Coop
                     hactName = coopVariant;
             }
 
-
             return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
         }
 
@@ -165,7 +168,11 @@ namespace Y5Coop
 
             if (NextHActIsByCoopPlayer)
             {
-                //if (chara1RegisterUID->Serial == ActionFighterManager.GetFighter(0).UID.Serial)
+                //Override original player 1 values with player 2 data
+                Vector4* chara1RegisterPos = (Vector4*)(registersStart + 0x10);
+                ushort* chara1RegisterRotY = (ushort*)(registersStart + 0x38);
+                *chara1RegisterPos = Mod.CoopPlayer.Position;
+                *chara1RegisterRotY = Mod.CoopPlayer.RotationY;
                 chara1RegisterUID->Serial = Mod.CoopPlayer.UID.Serial;
             }
             else

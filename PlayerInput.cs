@@ -171,6 +171,14 @@ namespace Y5Coop
         }
 
 
+        public static bool IsKBD(InputDeviceType type)
+        {
+            if (!Mod.CoopPlayerHandle.IsValid())
+                return type == InputDeviceType.Keyboard;
+            else
+                return type == InputDeviceType.All || type == InputDeviceType.Keyboard;
+        }
+
         private static bool m_overriden = false;
         public static void EnableInputOverride()
         {
@@ -235,7 +243,13 @@ namespace Y5Coop
 
             InputDeviceType type = (InputDeviceType)Marshal.ReadInt32(a1 + 224);
 
-            if(type != Player1InputType && Mod.CoopPlayerHandle.IsValid())
+
+            InputDeviceType realType = Player1InputType;
+
+            if (realType == InputDeviceType.All)
+                realType = InputDeviceType.Keyboard;
+
+            if(type != realType)
                 PreventActiveDeviceAssignment();
 
             m_origInputUpdate(a1, a2, a3, a4);
@@ -299,7 +313,10 @@ namespace Y5Coop
                 if (IsLegacyInput)
                     *deviceTypePtr = 9;
                 else
-                    *deviceTypePtr = (uint)Player1InputType;
+                {
+                   // if (IsKBD(Player1InputType) || IsKBD(Player2InputType))
+                        *deviceTypePtr = 9;
+                }
                 result = m_updateDataOrig(addr, idk2, idk3, idk4);
                 *deviceTypePtr = 0;
             }
