@@ -201,7 +201,7 @@ namespace Y5Coop
             dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
             m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 ? ? ? ? 48 8B CB E8 ? ? ? ? 48 8B CB"), Fighter_PreDestroy);
             m_fighterModeEquipUpdateOrig = engine.CreateHook<FighterModeEquipUpdate>(CPP.PatternSearch("48 89 5C 24 ? 57 48 83 EC ? 48 8B F9 48 89 74 24"), FighterMode_Equip_Update);
-            m_origVehicConstructor = engine.CreateHook<CDriveVehicleBaseConstructor>((IntPtr)CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 90 48 8D 05 ? ? ? ? 48 89 03 48 8D 8B ? ? ? ? 48 8B D3 E8 ? ? ? ? 90 33 FF")), CDriveVehicleBase_Constructor);
+            m_origVehicConstructor = engine.CreateHook<CDriveVehicleBaseConstructor>((IntPtr)CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 90 48 8D 05 ? ? ? ? 48 89 03 48 8D 8B ? ? ? ? 48 8B D3 E8 ? ? ? ? 90 33 FF"))), CDriveVehicleBase_Constructor);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
 

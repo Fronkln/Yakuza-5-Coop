@@ -89,7 +89,7 @@ namespace Y5Coop
         {
             if (AllowPlayer1InputCalibration && !Player1ForcedInput && !IsPlayer1InputCalibrated)
             {
-                    for (int i = 1; i < 9; i++)
+                    for (int i = 1; i < 10; i++)
                     {
                         InputDeviceType type = (InputDeviceType)i;
 
@@ -107,11 +107,11 @@ namespace Y5Coop
 
             if (AllowPlayer2InputCalibration && !Player2ForcedInput)
             {
-                for (int i = 1; i < 9; i++)
+                for (int i = 1; i < 10; i++)
                 {
                     InputDeviceType type = (InputDeviceType)i;
 
-                    if (IsInputSlotFree(type) && CheckIsThereAnyInput(type))
+                    if (IsInputSlotFree(type) && CheckIsThereAnyInput(type) && !IsInputCalibrated)
                     {
                         if (type != Player2InputType)
                         {
@@ -126,6 +126,10 @@ namespace Y5Coop
 
         public static void OnInputCalibrated(InputDeviceType input, bool isPlayer1)
         {
+            //basically keyboard
+            if (input == InputDeviceType.Keyboard)
+                input = InputDeviceType.All;
+
             DisableInputOverride();
 
             if (isPlayer1)
@@ -140,8 +144,7 @@ namespace Y5Coop
             else
                 fighter = Mod.CoopPlayer;
 
-            if(!isPlayer1)
-                fighter.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(input));
+            fighter.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(input));
 
             EnableInputOverride();
         }
@@ -149,7 +152,16 @@ namespace Y5Coop
 
         public static bool IsInputSlotFree(InputDeviceType type)
         {
-            return Player1InputType != type && Player2InputType != type;
+            if (IsPlayer1InputCalibrated)
+                if (Player1InputType == type || (IsKBD(type) && Player1InputType == InputDeviceType.All))
+
+                    return false;
+
+            if (IsInputCalibrated)
+                if (Player2InputType == type || (IsKBD(type) && Player2InputType == InputDeviceType.All))
+                    return false;
+
+            return true;
         }
 
         public static bool CheckIsThereAnyInput(InputDeviceType type)
@@ -260,6 +272,7 @@ namespace Y5Coop
 
         //If we do not route this to player1, game freezes when interacting with CCC
         //Bizzare bug that exists since Kenzan/Y3
+        //Not in Yakuza 0 though! my goat!
         static bool FighterUnknownInputUpdate(void* fighter, ulong arg1, ulong arg2)
         {          
             return m_origUnknownFighterInputUpdate.Invoke((void*)ActionFighterManager.GetFighter(0).Pointer, arg1, arg2);
@@ -298,6 +311,10 @@ namespace Y5Coop
             bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
 
             if (!playerExists || ActionManager.IsPaused())
+                return m_updateDataOrig(addr, idk2, idk3, idk4);
+
+            //Dont do this when CCC is active
+            if(ActionCCCManager.isActive)
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
 
             uint* deviceTypePtr = (uint*)(addr + 0x12a4);
