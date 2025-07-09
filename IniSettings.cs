@@ -10,7 +10,7 @@ namespace Y5Coop
         {
             get
             {
-                return Path.Combine(Mod.ModPath, "settings.ini");
+                return Path.Combine(Mod.Instance.ModPath, "settings.ini");
             }
         }
 

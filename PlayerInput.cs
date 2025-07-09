@@ -398,6 +398,8 @@ namespace Y5Coop
             }
         }
 
+        private static float m_playerHeavyInputTime = 0;
+
         public static FighterController_InputUpdate m_controllerInputUpdate;
         public static void FighterController__InputUpdate(void* a1)
         {
@@ -419,9 +421,29 @@ namespace Y5Coop
             if (Mod.CoopPlayer.Pointer == fighter.Pointer)
             {
 
-                if (Mod.IsBattle() && (Mod.CoopPlayer.InputFlags & 131072) != 0)
+                if (Mod.IsBattle())
                 {
-                    ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                    if(Mod.CoopPlayer.ModeManager.Current.Name == "HActBattleReady")
+                    {
+                        ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                    }
+                    else
+                    {
+                        if ((Mod.CoopPlayer.InputFlags & 131072) != 0)
+                        {
+                            m_playerHeavyInputTime += ActionManager.DeltaTime;
+
+                            if (m_playerHeavyInputTime <= 0.1f)
+                                ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                            else
+                                ActionFighterManager.SetPlayer(0);
+                        }
+                        else
+                        {
+                            m_playerHeavyInputTime = 0;
+                            ActionFighterManager.SetPlayer(0);
+                        }
+                    }
                 }
                 else
                 {

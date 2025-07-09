@@ -38,7 +38,7 @@ namespace Y5Coop
 
         public static void Init()
         {
-            string blacklistFile = Path.Combine(Mod.ModPath, "coop_hact_blacklist.txt");
+            string blacklistFile = Path.Combine(Mod.Instance.ModPath, "coop_hact_blacklist.txt");
 
             if(File.Exists(blacklistFile))
             {
@@ -58,15 +58,13 @@ namespace Y5Coop
                     m_hactCoopBlacklist.Add(str.ToLowerInvariant());
             }
 
-            HActDir = new DirectoryInfo(Path.Combine(Mod.ModPath, "hact"));
+            HActDir = new DirectoryInfo(Path.Combine(Mod.Instance.ModPath, "hact"));
 
             IntPtr hactRegisterFunc = CPP.PatternSearch("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC ? 41 8B F1 41 8B F8 48 8B DA");
 
             ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 41 54 41 56 41 57 48 83 EC ? 8B 15 ? ? ? ?"),HActManager_ProcessHActCharacters);
             RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
-            RegisterFighterOnHActDetour = Mod.engine.CreateHook<RegisterFighterHAct>(hactRegisterFunc, HAct_RegisterFighter);
             PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
-
 
             m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);       
             m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
@@ -112,14 +110,12 @@ namespace Y5Coop
 
             ActionFighterManager.SetPlayer(0);
 
-            //OE.LogInfo("WE JUST HAVE TO PUSH ON. WE DONT GET TO GIVE UP THIS LIFE");
-
             return m_invokeHactOrig(a1, unknown);
         }
 
         unsafe static ulong HActManager_PrepareHAct(IntPtr hactMan, string hactName, ulong idk3, ulong idk4, ulong idk5, ulong idk6)
         {
-            if (m_hactCoopBlacklist.Contains(hactName.ToLowerInvariant()) && NextHActIsByCoopPlayer)
+            if (NextHActIsByCoopPlayer && m_hactCoopBlacklist.Contains(hactName.ToLowerInvariant()))
                 NextHActIsByCoopPlayer = false;
 
             //if (ReplacePlayerWithPlayer2Once && Mod.m_coopPlayerIdx < -1)
@@ -140,31 +136,40 @@ namespace Y5Coop
                 //coop version of the hact exists and so does the coop player
                 //lets override to this version!
                 if (Directory.Exists(Path.Combine(HActDir.FullName, coopVariant)))
+                {
+                    NextHActIsByCoopPlayer = false;
                     hactName = coopVariant;
+                }
+               
             }
 
             return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
         }
 
-        unsafe static void HAct_RegisterFighter(uint idk, string replaceName, int fighterID, int idk3)
-        {
-            //if (replaceName == "ZA_HUPLAYER")
-                //fighterID = Mod.m_coopPlayerIdx;
-
-            RegisterFighterOnHActDetour(idk, replaceName, fighterID, idk3);
-        }
-
         unsafe static ulong HActManager_ProcessHActCharacters(IntPtr hactMan, ulong idk1, ulong idk2, ulong idk3)
         {
-            if (Mod.m_coopPlayerIdx < 0)
-                return ProcessHActCharacters(hactMan, idk1, idk2, idk3);
 
+            IntPtr registersStart = hactMan + 0x8E0;
             uint hactID = *(uint*)(hactMan + 0x830);
 
-            EntityUID test = ActionFighterManager.Player.UID;
-            IntPtr registersStart = hactMan + 0x8E0;
-
             EntityUID* chara1RegisterUID = (EntityUID*)(registersStart + 0x24);
+
+            if (Mod.m_coopPlayerIdx < 0)
+            {
+                return ProcessHActCharacters(hactMan, idk1, idk2, idk3);
+            }
+
+            string hactName = ActionHActCHPManager.CurrentName;
+
+            //Extra check here because invokehact is not always called
+            if(!string.IsNullOrEmpty(hactName))
+            {
+                if (NextHActIsByCoopPlayer && m_hactCoopBlacklist.Contains(hactName.ToLowerInvariant()))
+                    NextHActIsByCoopPlayer = false;
+
+                if (hactName.Contains("coop"))
+                    NextHActIsByCoopPlayer = false;
+            }
 
             if (NextHActIsByCoopPlayer)
             {
@@ -177,18 +182,16 @@ namespace Y5Coop
             }
             else
             {
-                if(Mod.CoopPlayer.Index > 0)
+                if (Mod.CoopPlayer.Index > 0)
                     chara1RegisterUID->Serial = ActionFighterManager.GetFighter(0).UID.Serial;
 
+
+                //Register the coop player onto hacts.
+                //Any hact that includes ZA_HUCOOP0 character will now have the coop player present
                 RegisterFighterOnHAct(hactID, "ZA_HUCOOP0", Mod.m_coopPlayerIdx, 1);
             }
 
             ulong result = ProcessHActCharacters(hactMan, idk1, idk2, idk3);
-
-            //Register the coop player onto hacts.
-            //Any hact that includes ZA_HUCOOP0 character will now have the coop player present
-
-
             return result;
         }
 

@@ -19,7 +19,7 @@ namespace Y5Coop
         [DllImport("user32.dll")]
         public static extern int MessageBox(IntPtr hWnd, String text, String caption, int options);
 
-        public static string ModPath;
+        public static Mod Instance;
 
         public static HookEngine engine = new HookEngine();
 
@@ -186,10 +186,10 @@ namespace Y5Coop
         public override void OnModInit()
         {
             base.OnModInit();
-            OE.LogInfo("Y5 Coop Init Start");
 
-            Assembly assmb = Assembly.GetExecutingAssembly();
-            ModPath = Path.GetDirectoryName(assmb.Location);
+            Instance = this;
+
+            OE.LogInfo("Y5 Coop Init Start");
 
             OE.RegisterJob(Update, 10);
 
