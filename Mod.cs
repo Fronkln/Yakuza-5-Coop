@@ -27,6 +27,7 @@ namespace Y5Coop
         public static EntityHandle CoopPlayerHandle;
 
         public static int m_coopPlayerIdx = -1;
+        public static int m_oldCoopIdx = -1;
         private bool m_awaitingSpawn = false;
 
         private bool m_playerSpawnedDoOnce = false;
@@ -61,6 +62,7 @@ namespace Y5Coop
         private delegate ulong DancerDestructor2(IntPtr dancer);
         private delegate ulong FighterPreDestroy(IntPtr dancer);
         private unsafe delegate void FighterModeEquipUpdate(IntPtr fighterMode);
+        private delegate IntPtr CActionFighterManagerGetFighterByUID(IntPtr fighterMan, uint serial);
 
         MotionID[] p2BattleStartAnims = new MotionID[]
 {
@@ -72,6 +74,63 @@ namespace Y5Coop
         private delegate ulong CDriveVehicleBaseConstructor(IntPtr a1, IntPtr a2, int a3, IntPtr a4, IntPtr a5);
 
         CDriveVehicleBaseConstructor m_origVehicConstructor;
+
+        public override void OnModInit()
+        {
+            base.OnModInit();
+
+            Instance = this;
+
+            OE.LogInfo("Y5 Coop Init Start");
+
+            OE.RegisterJob(Update, 10);
+
+            Thread thread = new Thread(InputThread);
+            thread.Start();
+
+            //Warning: Really bad pattern
+            dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
+            dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
+            m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 ? ? ? ? 48 8B CB E8 ? ? ? ? 48 8B CB"), Fighter_PreDestroy);
+            m_fighterModeEquipUpdateOrig = engine.CreateHook<FighterModeEquipUpdate>(CPP.PatternSearch("48 89 5C 24 ? 57 48 83 EC ? 48 8B F9 48 89 74 24"), FighterMode_Equip_Update);
+            m_origVehicConstructor = engine.CreateHook<CDriveVehicleBaseConstructor>(CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 90 48 8D 05 ? ? ? ? 48 89 03 48 8D 8B ? ? ? ? 48 8B D3 E8 ? ? ? ? 90 33 FF"))), CDriveVehicleBase_Constructor);
+            m_origGetFighterByUID = engine.CreateHook<CActionFighterManagerGetFighterByUID>(CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 48 85 C0 0F 84 ? ? ? ? 48 8B 10 48 8B C8 8B 7B"))), ActionFighterManager_GetFighterByUID);
+
+            Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
+
+            HActModule.Init();
+            PlayerInput.Init();
+
+            IniSettings.Read();
+
+            engine.EnableHook(dieDancer);
+            engine.EnableHook(dieLiveDancer);
+            engine.EnableHook(Camera.m_updateFuncOrig);
+            engine.EnableHook(m_fighterPreDestroyOrig);
+            engine.EnableHook(m_fighterModeEquipUpdateOrig);
+            engine.EnableHook(m_origVehicConstructor);
+            engine.EnableHook(m_origGetFighterByUID);
+
+            //Replace handshake guard with Ichiban
+            IntPtr handshakeGuardModelName = CPP.ResolveRelativeAddress(CPP.PatternSearch("8D 4A 06 E8 ? ? ? ? E8 ? ? ? ? B9 50 17 00 00 E8") + 0x52, 7);
+            CPP.PatchMemory(handshakeGuardModelName, System.Text.Encoding.ASCII.GetBytes("c_am_ichiban_tx_on"));
+
+
+            //dont ask
+            System.Timers.Timer timer = new System.Timers.Timer();
+            timer.Interval = 100;
+            timer.AutoReset = false;
+            timer.Elapsed += delegate
+            {
+                string cfcPath = Parless.GetFilePath("data/fighter/command/fighter_command.cfc");
+                string propBinPath = Parless.GetFilePath("data/motion/property.bin");
+                IsIchibanMovesetEnabled = cfcPath.Contains("Y5Coop") && propBinPath.Contains("Y5Coop");
+            };
+            timer.Enabled = true;
+
+            OE.LogInfo("Y5 Coop Init End");
+        }
+
 
         unsafe ulong CDriveVehicleBase_Constructor(IntPtr a1, IntPtr a2, int a3, IntPtr a4, IntPtr a5)
         {
@@ -181,60 +240,16 @@ namespace Y5Coop
             return dieLiveDancer(dancer);
         }
 
-        public override void OnModInit()
+        //Bizzare bug that causes UIDs to not work by itself sometimes
+        //Its up to us to tell the game to quit being fuckin stupid!
+        private static CActionFighterManagerGetFighterByUID m_origGetFighterByUID;
+        IntPtr ActionFighterManager_GetFighterByUID(IntPtr fighterManager, uint serial)
         {
-            base.OnModInit();
+            if (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer != null && serial == CoopPlayer.UID.Serial)
+                return CoopPlayer.Pointer;
 
-            Instance = this;
-
-            OE.LogInfo("Y5 Coop Init Start");
-
-            OE.RegisterJob(Update, 10);
-
-            Thread thread = new Thread(InputThread);
-            thread.Start();
-
-            //Warning: Really bad pattern
-            dieDancer = engine.CreateHook<DancerDestructor>(CPP.PatternSearch("41 56 48 83 EC ? 48 C7 44 24 20 ? ? ? ? 48 89 5C 24 40 48 89 6C 24 48 48 89 74 24 50 48 89 7C 24 58 44 8B F2 48 8B F1 48 8D 05 ? ? ? ? 48 89 01 48 8D 99 30 17 00 00"), Dancer_Destructor);
-            dieLiveDancer = engine.CreateHook<DancerDestructor2>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B D9 48 8B 89 ? ? ? ? 48 8B 01 FF 50 ? F6 83"), LiveDancer_Destructor);
-            m_fighterPreDestroyOrig = engine.CreateHook<FighterPreDestroy>(CPP.PatternSearch("40 53 48 83 EC ? 48 8B 01 BA ? ? ? ? 48 8B D9 FF 90 ? ? ? ? 48 8B CB E8 ? ? ? ? 48 8B CB"), Fighter_PreDestroy);
-            m_fighterModeEquipUpdateOrig = engine.CreateHook<FighterModeEquipUpdate>(CPP.PatternSearch("48 89 5C 24 ? 57 48 83 EC ? 48 8B F9 48 89 74 24"), FighterMode_Equip_Update);
-            m_origVehicConstructor = engine.CreateHook<CDriveVehicleBaseConstructor>((IntPtr)CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 90 48 8D 05 ? ? ? ? 48 89 03 48 8D 8B ? ? ? ? 48 8B D3 E8 ? ? ? ? 90 33 FF"))), CDriveVehicleBase_Constructor);
-
-            Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
-
-            HActModule.Init();
-            PlayerInput.Init();
-
-            IniSettings.Read();
-
-            engine.EnableHook(dieDancer);
-            engine.EnableHook(dieLiveDancer);
-            engine.EnableHook(Camera.m_updateFuncOrig);
-            engine.EnableHook(m_fighterPreDestroyOrig);
-            engine.EnableHook(m_fighterModeEquipUpdateOrig);
-            engine.EnableHook(m_origVehicConstructor);
-
-            //Replace handshake guard with Ichiban
-            IntPtr handshakeGuardModelName = CPP.ResolveRelativeAddress(CPP.PatternSearch("8D 4A 06 E8 ? ? ? ? E8 ? ? ? ? B9 50 17 00 00 E8") + 0x52, 7);
-            CPP.PatchMemory(handshakeGuardModelName, System.Text.Encoding.ASCII.GetBytes("c_am_ichiban_tx_on"));
-
-
-            //dont ask
-            System.Timers.Timer timer = new System.Timers.Timer();
-            timer.Interval = 100;
-            timer.AutoReset = false;
-            timer.Elapsed += delegate
-            {
-                string cfcPath = Parless.GetFilePath("data/fighter/command/fighter_command.cfc");
-                string propBinPath = Parless.GetFilePath("data/motion/property.bin");
-                IsIchibanMovesetEnabled = cfcPath.Contains("Y5Coop") && propBinPath.Contains("Y5Coop");
-            };
-            timer.Enabled = true;
-
-            OE.LogInfo("Y5 Coop Init End");
+            return m_origGetFighterByUID(fighterManager, serial);
         }
-
         void Reset()
         {
             m_coopPlayerIdx = -1;
@@ -546,9 +561,14 @@ namespace Y5Coop
 
                 if (AutomaticallyCreatePlayer)
                 {
-                    OE.LogInfo("Automatically creating player2");
-                    CreatePlayer2(m_remakePlayer);
-                    OE.LogInfo("Player 2 spawned on mission ID:" + SequenceManager.MissionID + " Stage ID: " + ActionStageManager.StageID);
+                    if (!m_remakePlayer || (m_remakePlayer && !ActionFighterManager.IsFighterPresent(m_oldCoopIdx)))
+                    {
+                        OE.LogInfo("Automatically creating player2");
+                        CreatePlayer2(m_remakePlayer);
+                        OE.LogInfo("Player 2 spawned on mission ID:" + SequenceManager.MissionID + " Stage ID: " + ActionStageManager.StageID);
+
+                        m_remakePlayer = false;
+                    }
                 }
             }
             else
@@ -748,6 +768,8 @@ namespace Y5Coop
 
         private void DestroyPlayer2()
         {
+            m_oldCoopIdx = m_coopPlayerIdx;
+
             PlayerInput.ResetPlayer1Input();
 
             if (!AllyMode)
@@ -759,7 +781,7 @@ namespace Y5Coop
 
         private void DestroyAndRecreatePlayer2()
         {
-            if (m_coopPlayerIdx >= 0 && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && !m_awaitingSpawn)
+            if (!m_remakePlayer && m_coopPlayerIdx >= 0 && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && !m_awaitingSpawn)
             {
                 DestroyPlayer2();
                 m_remakePlayer = true;
@@ -769,6 +791,8 @@ namespace Y5Coop
 
         private void CreatePlayer2(bool recreate)
         {
+            OE.LogInfo("Automatically creating player2");
+
             DisposeInfo p1Dispose = ActionFighterManager.Player.Dispose;
 
             NPCType playerType;
