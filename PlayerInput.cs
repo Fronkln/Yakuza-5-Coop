@@ -153,12 +153,12 @@ namespace Y5Coop
         public static bool IsInputSlotFree(InputDeviceType type)
         {
             if (IsPlayer1InputCalibrated)
-                if (Player1InputType == type || (IsKBD(type) && Player1InputType == InputDeviceType.All))
+                if (Player1InputType == type || (IsKBD(type) && (Player1InputType == InputDeviceType.All || Player2InputType == InputDeviceType.Keyboard)))
 
                     return false;
 
             if (IsInputCalibrated)
-                if (Player2InputType == type || (IsKBD(type) && Player2InputType == InputDeviceType.All))
+                if (Player2InputType == type || (IsKBD(type) && (Player2InputType == InputDeviceType.All || Player2InputType == InputDeviceType.Keyboard)))
                     return false;
 
             return true;

@@ -118,8 +118,6 @@ namespace Y5Coop
                 *flags = 5929;
             }
 
-            OE.LogInfo("progress");
-
             return m_origVehicConstructor(a1, a2, a3, a4, a5);
         }
 

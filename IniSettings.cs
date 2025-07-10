@@ -70,6 +70,7 @@ namespace Y5Coop
 
                 PlayerInput.Player1InputType = type;
                 PlayerInput.Player1ForcedInput = true;
+                PlayerInput.IsPlayer1InputCalibrated = true;
             }
 
             if (!string.IsNullOrEmpty(player2Override))
@@ -81,6 +82,7 @@ namespace Y5Coop
 
                 PlayerInput.Player2InputType = type;
                 PlayerInput.Player2ForcedInput = true;
+                PlayerInput.IsInputCalibrated = true;
             }
 
             PlayerInput.IsLegacyGenericController = byte.Parse(ini.GetValue("LegacyInput", "Bindings", null).Trim()) == 1;

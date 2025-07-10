@@ -62,6 +62,8 @@ namespace Y5Coop
 
             IntPtr hactRegisterFunc = CPP.PatternSearch("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC ? 41 8B F1 41 8B F8 48 8B DA");
 
+            RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
+
             ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 41 54 41 56 41 57 48 83 EC ? 8B 15 ? ? ? ?"),HActManager_ProcessHActCharacters);
             RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
             PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
@@ -77,7 +79,6 @@ namespace Y5Coop
             Mod.engine.EnableHook(m_origPreloadHAct);
 
             Mod.engine.EnableHook(ProcessHActCharacters);
-            Mod.engine.EnableHook(RegisterFighterOnHActDetour);
             Mod.engine.EnableHook(PrepareHAct);
 
         }
