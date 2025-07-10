@@ -52,7 +52,7 @@ namespace Y5Coop
             string missions = ini.GetValue("BlacklistedMissions", "General", "");
 
             if (!string.IsNullOrEmpty(missions))
-                Mod.BlacklistedMissions = missions.Split(',').Select(x => int.Parse(x.Trim())).ToArray();
+                Mod.BlacklistedMissions = missions.Split(';').Select(x => int.Parse(x.Trim())).ToArray();
 
             Mod.DebugInput = byte.Parse(ini.GetValue("DebugLogInput", "Bindings", "0")) == 1;
 
