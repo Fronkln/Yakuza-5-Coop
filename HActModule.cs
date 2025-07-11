@@ -36,6 +36,48 @@ namespace Y5Coop
         private static HashSet<string> m_hactCoopBlacklist = new HashSet<string>();
         private static HashSet<string> m_coopHacts = new HashSet<string>();
 
+
+        public static bool IsHAct = false;
+
+
+        public static void Update()
+        {
+            if(IsHAct)
+            {
+                if(ActionHActManager.Current.Pointer != IntPtr.Zero)
+                {
+                    OnHActEnter();
+                    IsHAct = true;
+                }
+            }
+            else
+            {
+
+                if (ActionHActManager.Current.Pointer == IntPtr.Zero)
+                {
+                    OnHActExit();
+                    IsHAct = false;
+                }
+            }
+        }
+
+        public static void OnHActEnter()
+        {
+            //if(Mod.m_coopPlayerIdx > 0)
+              //  ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
+        }
+
+        public static void OnHActExit()
+        {
+            if(!Mod.AllyMode)
+            {
+                if(Mod.CoopPlayer != null)
+                {
+                    PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
+                }
+            }
+        }
+
         public static void Init()
         {
             string blacklistFile = Path.Combine(Mod.Instance.ModPath, "coop_hact_blacklist.txt");
@@ -70,7 +112,6 @@ namespace Y5Coop
 
             m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);       
             m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
-
             //Remove useless checks in hact.chp for targets that dont exist (greater than 6)
             //No target in hact chp is ever greater than 6 in vanilla game so we can do this funny party trick for Y5 Co-op
             CPP.PatchMemory(CPP.PatternSearch("FF 90 ? ? ? ? 85 C0 75 ? 48 8B 03 48 8B CB FF 90 ? ? ? ? 85 C0 0F 85"), new byte[] { 0xB8, 0x01, 0x0, 0x0, 0x0, 0x90 });
@@ -109,7 +150,7 @@ namespace Y5Coop
             if (Mod.CoopPlayer.Index > 0 && ActionFighterManager.Player.Pointer == Mod.CoopPlayer.Pointer)
                 NextHActIsByCoopPlayer = true;
 
-            ActionFighterManager.SetPlayer(0);
+           // ActionFighterManager.SetPlayer(0);
 
             return m_invokeHactOrig(a1, unknown);
         }
@@ -174,12 +215,17 @@ namespace Y5Coop
 
             if (NextHActIsByCoopPlayer)
             {
+               
                 //Override original player 1 values with player 2 data
                 Vector4* chara1RegisterPos = (Vector4*)(registersStart + 0x10);
                 ushort* chara1RegisterRotY = (ushort*)(registersStart + 0x38);
-                *chara1RegisterPos = Mod.CoopPlayer.Position;
-                *chara1RegisterRotY = Mod.CoopPlayer.RotationY;
-                chara1RegisterUID->Serial = Mod.CoopPlayer.UID.Serial;
+
+                Fighter fighter = ActionFighterManager.GetFighter(Mod.m_coopPlayerIdx);
+
+                *chara1RegisterPos = fighter.Position;
+                *chara1RegisterRotY = fighter.RotationY;
+
+                chara1RegisterUID->UID = 0xBEEF;
             }
             else
             {
@@ -195,8 +241,6 @@ namespace Y5Coop
             ulong result = ProcessHActCharacters(hactMan, idk1, idk2, idk3);
             return result;
         }
-
-
 
         static PreloadHAct m_origPreloadHAct;
         unsafe static long Preload_HAct(string hactName, string path, int flags)

@@ -51,8 +51,15 @@ namespace Y5Coop
 
         public static bool DebugInput = true;
 
+        private static bool m_spawningWithDelay = false;
+        private static float m_spawnDelay = 0;
         private static float m_teleportDelay = 0;
-        private static bool m_remakePlayer;
+
+        private static bool m_remakePlayer = false;
+        private static bool m_remakePlayerPreservePosition = false;
+        private static Vector3 m_remakePlayerPreservePos;
+        private static ushort m_remakePlayerPreserveAngle;
+
         private static bool m_dontRespawnPlayerThisMissionDoOnce = false;
         private static bool m_battleStartRecreatePlayer = false;
         private static bool m_btlstDecided = false;
@@ -245,8 +252,20 @@ namespace Y5Coop
         private static CActionFighterManagerGetFighterByUID m_origGetFighterByUID;
         IntPtr ActionFighterManager_GetFighterByUID(IntPtr fighterManager, uint serial)
         {
-            if (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer != null && serial == CoopPlayer.UID.Serial)
-                return CoopPlayer.Pointer;
+
+            IntPtr result = m_origGetFighterByUID(fighterManager, serial);
+
+            if (result == IntPtr.Zero)
+            {
+                //0XBEEF is our special UID that shall always refer to the co-op player.
+                //Our hooked HActManager_ProcessHActCharacters will register the co-op player's serial as 0xBEEF
+                //Giving Kasuga a consistent UID that can never fail.
+                if (serial == 0XBEEF && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer != null)
+                    return CoopPlayer.Pointer;
+
+                if (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && CoopPlayer != null && serial == CoopPlayer.UID.Serial)
+                  return CoopPlayer.Pointer;
+            }
 
             return m_origGetFighterByUID(fighterManager, serial);
         }
@@ -264,6 +283,9 @@ namespace Y5Coop
 
         void Update()
         {
+
+            HActModule.Update();
+
             if (DebugInput)
             {
                 for (int i = 1; i < 10; i++)
@@ -308,6 +330,16 @@ namespace Y5Coop
                 CoopPlayerExistTime += ActionManager.UnscaledDeltaTime;
 
                 Fighter coopPlayer = ActionFighterManager.GetFighter(m_coopPlayerIdx);
+                CoopPlayer = coopPlayer;
+
+                if (!HActModule.IsHAct)
+                {
+                    CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
+
+                    if(m_coopPlayerIdx > 0)
+                        ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
+                }
+                
 
                 if (Vector3.Distance(CoopPlayer.Position, ActionFighterManager.GetFighter(0).Position) >= TeleportDistance)
                 {
@@ -547,6 +579,9 @@ namespace Y5Coop
 
         private void NormalUpdate()
         {
+            if (m_spawningWithDelay)
+                m_spawnDelay -= ActionManager.DeltaTime;
+
             if (m_awaitingSpawn)
             {
                 if (ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
@@ -563,11 +598,32 @@ namespace Y5Coop
                 {
                     if (!m_remakePlayer || (m_remakePlayer && !ActionFighterManager.IsFighterPresent(m_oldCoopIdx)))
                     {
+
+                        if(!m_remakePlayer)
+                        {
+                            bool shouldSpawnWithDelay = (IsBattle() || IsFreeroam()) && !IsEncounter();
+
+                            //Spawn player with a slight delay
+                            if (shouldSpawnWithDelay && !m_spawningWithDelay)
+                            {
+                                m_spawnDelay = 0.25f;
+                                m_spawningWithDelay = true;
+
+                                OE.LogInfo("Spawning player 2 with " + m_spawnDelay + " seconds of delay.");
+                            }
+                        }
+          
+                        if (m_spawnDelay > 0 && m_spawningWithDelay)
+                            return;
+
+
                         OE.LogInfo("Automatically creating player2");
+
                         CreatePlayer2(m_remakePlayer);
                         OE.LogInfo("Player 2 spawned on mission ID:" + SequenceManager.MissionID + " Stage ID: " + ActionStageManager.StageID);
 
                         m_remakePlayer = false;
+                        m_spawningWithDelay = false;
                     }
                 }
             }
@@ -588,15 +644,19 @@ namespace Y5Coop
 
                     if (!AllyMode)
                     {
-                        if (ActionFighterManager.Player.HumanMotion.CurrentAnimation.ToString().Contains("btlst"))
-                        {
-                            if (!m_battleStartRecreatePlayer)
+                            if (ActionFighterManager.Player.HumanMotion.CurrentAnimation.ToString().Contains("btlst"))
                             {
-                                DestroyAndRecreatePlayer2();
+                                if (!m_battleStartRecreatePlayer)
+                                {
+                                if (!IsEncounter())
+                                    DestroyAndRecreatePlayer2();
+                                else
+                                    CoopPlayer.HumanMotion.NextAnimation = p2BattleStartAnims[new Random().Next(0, p2BattleStartAnims.Length)];
                                 m_battleStartRecreatePlayer = true;
-                                ActionFighterManager.SetPlayer(m_coopPlayerIdx);
+                                    ActionFighterManager.SetPlayer(m_coopPlayerIdx);
+                                }
                             }
-                        }
+                        
                     }
                     if (CoopPlayer != null && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx))
                     {
@@ -660,6 +720,19 @@ namespace Y5Coop
             return !m_dontRespawnPlayerThisMissionDoOnce && !BlacklistedMissions.Contains((int)SequenceManager.MissionID);
         }
 
+
+        public static bool IsEncounter()
+        {
+            uint mission = SequenceManager.MissionID;
+            return mission == 400;
+        }
+
+        public static bool IsFreeroam()
+        {
+            uint mission = SequenceManager.MissionID;
+            return mission == 300;
+        }
+
         public static bool IsBattle()
         {
             uint mission = SequenceManager.MissionID;
@@ -703,11 +776,13 @@ namespace Y5Coop
                     {
                         Fighter main = ActionFighterManager.GetFighter(0);
 
-                        coopPlayer.HumanMotion.Flags = 0;
-                        coopPlayer.HumanMotion.Mode = 0;
-                        coopPlayer.HumanMotion.SetPosition(main.Position);
-                        coopPlayer.HumanMotion.Flags = main.HumanMotion.Flags;
-                        coopPlayer.HumanMotion.Mode = main.HumanMotion.Mode;
+                        //come to me pal, we are in a fight!
+                        if (Vector3.Distance(main.Position, coopPlayer.Position) >= 10)
+                        {
+                            DestroyAndRecreatePlayer2();
+                        }
+
+                        OE.LogInfo("Our co-op buddies have entered an encounter battle...");
                     }
                 }
             }
@@ -779,13 +854,14 @@ namespace Y5Coop
             Reset();
         }
 
-        private void DestroyAndRecreatePlayer2()
+        private void DestroyAndRecreatePlayer2(bool preservePosition = false)
         {
             if (!m_remakePlayer && m_coopPlayerIdx >= 0 && ActionFighterManager.IsFighterPresent(m_coopPlayerIdx) && !m_awaitingSpawn)
             {
+                OE.LogInfo("Destroying and immediately remaking player 2.");
+
                 DestroyPlayer2();
                 m_remakePlayer = true;
-
             }
         }
 

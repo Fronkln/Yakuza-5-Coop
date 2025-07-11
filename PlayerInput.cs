@@ -313,8 +313,13 @@ namespace Y5Coop
             if (!playerExists || ActionManager.IsPaused())
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
 
+
+            //Don't do it for hacts either
+           // if(ActionHActManager.Current.Pointer != IntPtr.Zero)
+               // return m_updateDataOrig(addr, idk2, idk3, idk4);
+
             //Dont do this when CCC is active
-            if(ActionCCCManager.isActive)
+            if (ActionCCCManager.isActive)
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
 
             uint* deviceTypePtr = (uint*)(addr + 0x12a4);
@@ -399,6 +404,7 @@ namespace Y5Coop
         }
 
         private static float m_playerHeavyInputTime = 0;
+        public static bool Player2WantHAct = true;
 
         public static FighterController_InputUpdate m_controllerInputUpdate;
         public static void FighterController__InputUpdate(void* a1)
@@ -429,25 +435,31 @@ namespace Y5Coop
                     }
                     else
                     {
-                        if ((Mod.CoopPlayer.InputFlags & 131072) != 0)
+                        if ((Mod.CoopPlayer.InputFlags & 131072) != 0 && !HActModule.IsHAct)
                         {
                             m_playerHeavyInputTime += ActionManager.DeltaTime;
 
                             if (m_playerHeavyInputTime <= 0.1f)
+                            {
                                 ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                                Player2WantHAct = true;
+                            }
                             else
                                 ActionFighterManager.SetPlayer(0);
+      
                         }
                         else
                         {
                             m_playerHeavyInputTime = 0;
                             ActionFighterManager.SetPlayer(0);
+                            Player2WantHAct = false;
                         }
                     }
                 }
                 else
                 {
                     ActionFighterManager.SetPlayer(0);
+                    Player2WantHAct = false;
                 }
             }
         }
