@@ -229,8 +229,8 @@ namespace Y5Coop
             }
             else
             {
-                if (Mod.CoopPlayer.Index > 0)
-                    chara1RegisterUID->Serial = ActionFighterManager.GetFighter(0).UID.Serial;
+              //  if (Mod.CoopPlayer.Index > 0)
+                //    chara1RegisterUID->Serial = ActionFighterManager.GetFighter(0).UID.Serial;
 
 
                 //Register the coop player onto hacts.

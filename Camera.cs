@@ -44,8 +44,6 @@ namespace Y5Coop
             }
 
             int playerIdx = ActionFighterManager.Player.Index;
-            int focusIdx = playerIdx;
-        
             //Keep focus on player 1
             ActionFighterManager.SetPlayer(0);
 
@@ -72,7 +70,6 @@ namespace Y5Coop
                     if(UseClassicCamera)
                     {
                         m_updateFuncOrig(cam);
-                        ActionFighterManager.SetPlayer(playerIdx);
                         return;
                     }
 
@@ -88,7 +85,6 @@ namespace Y5Coop
                         if(UseClassicCameraBattle)
                         {
                             m_updateFuncOrig(cam);
-                            ActionFighterManager.SetPlayer(playerIdx);
                             return;
                         }
 
@@ -112,24 +108,19 @@ namespace Y5Coop
 
                 camera.FieldOfView = ModMath.Lerp(camera.FieldOfView, targetFOV, ActionManager.DeltaTime * smoothSpeed);
 
+                ActionFighterManager.SetPlayer(playerIdx);
                 // camera.Position = camPos;
 
                 //if (Vector3.Distance(camera.Position, focusPos) >= FollowDistance)
                 //camera.Position = Vector3.Lerp(camera.Position, focusPos + new Vector3(0, 0.65f, 0), 1f * ActionManager.UnscaledDeltaTime);
+
+                return;
             }
             else
             {
                 m_updateFuncOrig(cam);
             }
 
-
-            if (SequenceManager.MissionID == 408)
-            {
-            }
-            else
-            {
-                //m_updateFuncOrig(cam);
-            }
             ActionFighterManager.SetPlayer(0);
         }
     }
