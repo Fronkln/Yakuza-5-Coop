@@ -70,6 +70,7 @@ namespace Y5Coop
                     if(UseClassicCamera)
                     {
                         m_updateFuncOrig(cam);
+                        ActionFighterManager.SetPlayer(playerIdx);
                         return;
                     }
 
@@ -85,6 +86,7 @@ namespace Y5Coop
                         if(UseClassicCameraBattle)
                         {
                             m_updateFuncOrig(cam);
+                            ActionFighterManager.SetPlayer(playerIdx);
                             return;
                         }
 
