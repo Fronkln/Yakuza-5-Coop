@@ -37,7 +37,7 @@ namespace Y5Coop
         internal static CCameraFreeUpdate m_updateFuncOrig;
         public static void CCameraFree_Update(IntPtr cam)
         {
-            if (Mod.IsChase())
+            if (Mod.IsChase() || Mod.IsHunting())
             {
                 m_updateFuncOrig(cam);
                 return;

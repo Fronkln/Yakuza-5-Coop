@@ -1,8 +1,6 @@
 ﻿using MinHook;
 using System;
 using System.Collections.Generic;
-using System.Data.SqlTypes;
-using System.Diagnostics.SymbolStore;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -89,6 +87,15 @@ namespace Y5Coop
             Instance = this;
 
             OE.LogInfo("Y5 Coop Init Start");
+
+            var y5lib =   AppDomain.CurrentDomain.GetAssemblies().
+           SingleOrDefault(assembly => assembly.GetName().Name == "Y5Lib.NET");
+
+            if (y5lib.GetName().Version < new Version(1, 0, 1, 6))
+            {
+                MessageBox(IntPtr.Zero, "Current version of Intertwined Fates requires Y5Lib version 0.16 and greater. Please update Y5Lib from Libraries tab on the top left of Shin Ryu Mod Manager.\nRefer to INSTALLATION segment in NexusMods description if you are unsure of what to do.", "Need Update", 0);
+                Environment.Exit(0);
+            }
 
             OE.RegisterJob(Update, 10);
 
@@ -556,8 +563,11 @@ namespace Y5Coop
 
             if (!AllyMode)
             {
-                ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
-                CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
+                if (!HActModule.IsHAct)
+                {
+                    ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
+                    CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
+                }
 
                 if (PlayerInput.IsPlayer1InputCalibrated)
                     PlayerInput.FuckedUpPlayer1WorkAround = true;

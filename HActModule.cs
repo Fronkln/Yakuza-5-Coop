@@ -36,15 +36,16 @@ namespace Y5Coop
         private static HashSet<string> m_hactCoopBlacklist = new HashSet<string>();
         private static HashSet<string> m_coopHacts = new HashSet<string>();
 
+        public static Fighter LastHActPerformer;
 
         public static bool IsHAct = false;
 
 
         public static void Update()
         {
-            if(IsHAct)
+            if (!IsHAct)
             {
-                if(ActionHActManager.Current.Pointer != IntPtr.Zero)
+                if (ActionHActManager.Current.Pointer != IntPtr.Zero)
                 {
                     OnHActEnter();
                     IsHAct = true;
@@ -59,19 +60,46 @@ namespace Y5Coop
                     IsHAct = false;
                 }
             }
+
+            if (IsHAct)
+                OnHActUpdate();
+        }
+
+
+        public static bool IsHActLinkingOut()
+        {
+            if (!IsHAct)
+                return false;
+
+            return ActionHActManager.Current.Phase > 2;
         }
 
         public static void OnHActEnter()
         {
-            //if(Mod.m_coopPlayerIdx > 0)
-              //  ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
+            if (Mod.m_coopPlayerIdx > 0)
+                ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
+        }
+
+
+        public static void OnHActUpdate()
+        {
+            if (Mod.m_coopPlayerIdx > 0)
+            {
+                Fighter player = ActionFighterManager.GetFighter(0);
+
+                //linked out of hact
+                if (IsHActLinkingOut())
+                    PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
+                else
+                    ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
+            }
         }
 
         public static void OnHActExit()
         {
-            if(!Mod.AllyMode)
+            if (!Mod.AllyMode)
             {
-                if(Mod.CoopPlayer != null)
+                if (Mod.CoopPlayer != null)
                 {
                     PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
                 }
@@ -82,12 +110,13 @@ namespace Y5Coop
         {
             string blacklistFile = Path.Combine(Mod.Instance.ModPath, "coop_hact_blacklist.txt");
 
-            if(File.Exists(blacklistFile))
+            if (File.Exists(blacklistFile))
             {
                 string[] blacklist = File.ReadAllLines(blacklistFile);
 
                 var cleanedLines = blacklist
-                    .Select(line => {
+                    .Select(line =>
+                    {
                         int commentIndex = line.IndexOf("//");
                         return commentIndex >= 0 ? line.Substring(0, commentIndex).Trim() : line.Trim();
                     })
@@ -96,7 +125,7 @@ namespace Y5Coop
 
                 m_hactCoopBlacklist.Clear();
 
-                foreach(string str in cleanedLines)
+                foreach (string str in cleanedLines)
                     m_hactCoopBlacklist.Add(str.ToLowerInvariant());
             }
 
@@ -106,11 +135,11 @@ namespace Y5Coop
 
             RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
 
-            ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 41 54 41 56 41 57 48 83 EC ? 8B 15 ? ? ? ?"),HActManager_ProcessHActCharacters);
+            ProcessHActCharacters = Mod.engine.CreateHook<CActionHActManager_ProcessHActCharacters>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 41 54 41 56 41 57 48 83 EC ? 8B 15 ? ? ? ?"), HActManager_ProcessHActCharacters);
             RegisterFighterOnHAct = Marshal.GetDelegateForFunctionPointer<RegisterFighterHAct>(hactRegisterFunc);
             PrepareHAct = Mod.engine.CreateHook<CActionHActManagerPrepareHAct>(CPP.PatternSearch("48 89 5C 24 10 48 89 6C 24 18 57 48 83 EC ? 48 8B D9 C5 F8 29 74 24 40"), HActManager_PrepareHAct);
 
-            m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);       
+            m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);
             m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
             //Remove useless checks in hact.chp for targets that dont exist (greater than 6)
             //No target in hact chp is ever greater than 6 in vanilla game so we can do this funny party trick for Y5 Co-op
@@ -129,7 +158,7 @@ namespace Y5Coop
         {
             string path = "data/hact/" + hactName + "_coop.par";
             string result = Parless.GetFilePath(path);
- 
+
             bool exists = false;
 
             if (File.Exists(result) && result.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))
@@ -144,13 +173,13 @@ namespace Y5Coop
         {
             NextHActIsByCoopPlayer = false;
 
-            if(Mod.CoopPlayer == null || !ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
+            if (Mod.CoopPlayer == null || !ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
                 return m_invokeHactOrig(a1, unknown);
 
             if (Mod.CoopPlayer.Index > 0 && ActionFighterManager.Player.Pointer == Mod.CoopPlayer.Pointer)
                 NextHActIsByCoopPlayer = true;
 
-           // ActionFighterManager.SetPlayer(0);
+            // ActionFighterManager.SetPlayer(0);
 
             return m_invokeHactOrig(a1, unknown);
         }
@@ -166,7 +195,7 @@ namespace Y5Coop
             if (Mod.m_coopPlayerIdx < 0)
                 return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
 
-            if(!ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
+            if (!ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
                 return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
 
             //override into coop version of the hact if it exists
@@ -182,7 +211,7 @@ namespace Y5Coop
                     NextHActIsByCoopPlayer = false;
                     hactName = coopVariant;
                 }
-               
+
             }
 
             return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
@@ -204,7 +233,7 @@ namespace Y5Coop
             string hactName = ActionHActCHPManager.CurrentName;
 
             //Extra check here because invokehact is not always called
-            if(!string.IsNullOrEmpty(hactName))
+            if (!string.IsNullOrEmpty(hactName))
             {
                 if (NextHActIsByCoopPlayer && m_hactCoopBlacklist.Contains(hactName.ToLowerInvariant()))
                     NextHActIsByCoopPlayer = false;
@@ -215,7 +244,7 @@ namespace Y5Coop
 
             if (NextHActIsByCoopPlayer)
             {
-               
+
                 //Override original player 1 values with player 2 data
                 Vector4* chara1RegisterPos = (Vector4*)(registersStart + 0x10);
                 ushort* chara1RegisterRotY = (ushort*)(registersStart + 0x38);
@@ -226,16 +255,20 @@ namespace Y5Coop
                 *chara1RegisterRotY = fighter.RotationY;
 
                 chara1RegisterUID->UID = 0xBEEF;
+
+                LastHActPerformer = fighter;
             }
             else
             {
-              //  if (Mod.CoopPlayer.Index > 0)
+                //  if (Mod.CoopPlayer.Index > 0)
                 //    chara1RegisterUID->Serial = ActionFighterManager.GetFighter(0).UID.Serial;
 
 
                 //Register the coop player onto hacts.
                 //Any hact that includes ZA_HUCOOP0 character will now have the coop player present
                 RegisterFighterOnHAct(hactID, "ZA_HUCOOP0", Mod.m_coopPlayerIdx, 1);
+
+                LastHActPerformer = ActionFighterManager.GetFighter(0);
             }
 
             ulong result = ProcessHActCharacters(hactMan, idk1, idk2, idk3);

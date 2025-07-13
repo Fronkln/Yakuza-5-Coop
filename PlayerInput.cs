@@ -50,6 +50,10 @@ namespace Y5Coop
 
         public static bool FuckedUpPlayer1WorkAround = false;
 
+        public static int* ActiveInputDevice;
+        public static int Player1ActiveInputDeviceID = -1;
+        public static int Player2ActiveInputDeviceID = -1;
+
         public static void Init()
         {
             m_inputValAssignmentAddr = CPP.PatternSearch("89 07 FF C3 48 83 C7 ? 83 FB ? 7C ?");
@@ -81,6 +85,12 @@ namespace Y5Coop
 
             m_controllerInputUpdate = Mod.engine.CreateHook<FighterController_InputUpdate>(fighterInputUpdateAddr, FighterController__InputUpdate);
             m_origUnknownFighterInputUpdate = Mod.engine.CreateHook<Fighter_SomeMysteriousInputUpdate>(fighterInputUpdate2Addr, FighterUnknownInputUpdate);
+
+            IntPtr inputManPtrPtr = CPP.ResolveRelativeAddress(CPP.PatternSearch("48 8B 0D ? ? ? ? BA ? ? ? ? 44 8B E8 E8 ? ? ? ? 48 8B B4 24"), 7);
+            IntPtr inputManPtr = (IntPtr)(*(long*)inputManPtrPtr) + 0x3C;
+
+
+            ActiveInputDevice = (int*)inputManPtr;
         }
 
 
@@ -232,15 +242,25 @@ namespace Y5Coop
             m_overriden = false;
         }
 
+        private static bool m_assignmentAllowed = true;
         //Prevent the game from changing the "active" device. Preventing UI buttons from changing
         public static void AllowActiveDeviceAssignment() 
         {
+            if(m_assignmentAllowed)
+                return;
+
            CPP.PatchMemory(m_activeDeviceAssignmentAddr, new byte[] { 0x8D, 0x42, 0xFD });
+            m_assignmentAllowed = true;
         }
 
         public static void PreventActiveDeviceAssignment()
         {
+            if (!m_assignmentAllowed)
+                return;
+
+
             CPP.PatchMemory(m_activeDeviceAssignmentAddr, new byte[] { 0xC3, 0x90, 0x90 });
+            m_assignmentAllowed = false;
         }
 
         private static GameInputUpdate m_origInputUpdate;
@@ -253,17 +273,52 @@ namespace Y5Coop
                 return;
             }
 
-            InputDeviceType type = (InputDeviceType)Marshal.ReadInt32(a1 + 224);
+            if (HActModule.IsHAct)
+            {
+                if(HActModule.LastHActPerformer != null)
+                {
+                    InputDeviceType performerInputType;
 
+                    if (HActModule.LastHActPerformer.Index == Mod.CoopPlayer.Index)
+                        performerInputType = Player2InputType;
+                    else
+                        performerInputType = Player1InputType;
 
-            InputDeviceType realType = Player1InputType;
-
-            if (realType == InputDeviceType.All)
-                realType = InputDeviceType.Keyboard;
-
-            if(type != realType)
+                    if (IsKBD(performerInputType))
+                        *ActiveInputDevice = 1;
+                    else
+                        *ActiveInputDevice = 3;
+                }
                 PreventActiveDeviceAssignment();
+            }
+            else
+            {
+                InputDeviceType type = (InputDeviceType)Marshal.ReadInt32(a1 + 224);
+                InputDeviceType realType = Player1InputType;
 
+                if (realType == InputDeviceType.All)
+                    realType = InputDeviceType.Keyboard;
+
+                /*
+                if (type != realType)
+                {
+                    if (type == Player2InputType)
+                    {
+                        if (IsInputCalibrated && Player2ActiveInputDeviceID == -1)
+                        {
+                            AllowActiveDeviceAssignment();
+                            m_origInputUpdate(a1, a2, a3, a4);
+
+                            Player2ActiveInputDeviceID = *ActiveInputDevice;
+                            return;
+                        }
+                    }
+                }
+
+                */
+                if (type != realType)
+                    PreventActiveDeviceAssignment();
+            }
             m_origInputUpdate(a1, a2, a3, a4);
 
             AllowActiveDeviceAssignment();
@@ -314,9 +369,19 @@ namespace Y5Coop
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
 
 
+            if(HActModule.IsHAct)
+            {
+                //the player performing the hact hasnt linked out/is still in hact
+                if(!HActModule.IsHActLinkingOut())
+                    return m_updateDataOrig(addr, idk2, idk3, idk4);
+            }
+
             //Don't do it for hacts either
-           // if(ActionHActManager.Current.Pointer != IntPtr.Zero)
-               // return m_updateDataOrig(addr, idk2, idk3, idk4);
+            /*
+            if(ActionHActManager.Current.Pointer != IntPtr.Zero)
+                if()
+                return m_updateDataOrig(addr, idk2, idk3, idk4);
+            */
 
             //Dont do this when CCC is active
             if (ActionCCCManager.isActive)
@@ -458,8 +523,6 @@ namespace Y5Coop
                 }
                 else
                 {
-                    ActionFighterManager.SetPlayer(0);
-                    Player2WantHAct = false;
                 }
             }
         }
