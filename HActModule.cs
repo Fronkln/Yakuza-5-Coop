@@ -18,7 +18,6 @@ namespace Y5Coop
 
         private delegate void RegisterFighterHAct(uint idk, string replaceName, int fighterID, int idk2);
         static RegisterFighterHAct RegisterFighterOnHAct;
-        static RegisterFighterHAct RegisterFighterOnHActDetour;
 
         private delegate IntPtr InvokeHAct(IntPtr a1, float unknown);
         private delegate IntPtr CActionHActChpManagerProcessRegisters(IntPtr a1);
@@ -219,7 +218,6 @@ namespace Y5Coop
 
         unsafe static ulong HActManager_ProcessHActCharacters(IntPtr hactMan, ulong idk1, ulong idk2, ulong idk3)
         {
-
             IntPtr registersStart = hactMan + 0x8E0;
             uint hactID = *(uint*)(hactMan + 0x830);
 
