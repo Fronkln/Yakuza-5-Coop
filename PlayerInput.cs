@@ -372,7 +372,7 @@ namespace Y5Coop
             if(HActModule.IsHAct)
             {
                 //the player performing the hact hasnt linked out/is still in hact
-                if(!HActModule.IsHActLinkingOut())
+               // if(!HActModule.IsHActLinkingOut())
                     return m_updateDataOrig(addr, idk2, idk3, idk4);
             }
 

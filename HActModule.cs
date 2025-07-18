@@ -27,6 +27,8 @@ namespace Y5Coop
 
         private delegate long PreloadHAct(string name, string path, int flags);
 
+        private delegate IntPtr HactEndNodePlay(IntPtr a1);
+
         public static DirectoryInfo HActDir;
 
         public static bool NextHActIsByCoopPlayer = false;
@@ -38,6 +40,7 @@ namespace Y5Coop
         public static Fighter LastHActPerformer;
 
         public static bool IsHAct = false;
+        public static bool Player2IsPerformingHAct = false;
 
 
         public static void Update()
@@ -75,23 +78,21 @@ namespace Y5Coop
 
         public static void OnHActEnter()
         {
-            if (Mod.m_coopPlayerIdx > 0)
-                ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
+            if(!Mod.AllyMode)
+            {
+                if (Mod.m_coopPlayerIdx > 0)
+                {
+                    if (Player2IsPerformingHAct)
+                        ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
+                    else
+                        ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
+                }
+            }
         }
 
 
         public static void OnHActUpdate()
         {
-            if (Mod.m_coopPlayerIdx > 0)
-            {
-                Fighter player = ActionFighterManager.GetFighter(0);
-
-                //linked out of hact
-                if (IsHActLinkingOut())
-                    PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
-                else
-                    ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(0));
-            }
         }
 
         public static void OnHActExit()
@@ -103,6 +104,8 @@ namespace Y5Coop
                     PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
                 }
             }
+
+             Player2IsPerformingHAct = false;
         }
 
         public static void Init()
@@ -140,6 +143,8 @@ namespace Y5Coop
 
             m_invokeHactOrig = Mod.engine.CreateHook<InvokeHAct>(CPP.PatternSearch("48 8B C4 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 70 ? C5 F8 29 70 ? 48 8B F1 E8 ? ? ? ? 45 33 C0 BA"), Invoke_Hact);
             m_origPreloadHAct = Mod.engine.CreateHook<PreloadHAct>(CPP.PatternSearch("48 8B C4 57 41 54 41 55 41 56 41 57 48 83 EC ? 48 C7 40 ? ? ? ? ? 48 89 58 ? 48 89 68 ? 48 89 70 ? 45 8B E0"), Preload_HAct);
+
+            m_origHactEndPlay = Mod.engine.CreateHook<HactEndNodePlay>(CPP.PatternSearch("40 57 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 44 24 ? F6 41 ? ? C5 FA 10 25"), HactEndNode_Play);
             //Remove useless checks in hact.chp for targets that dont exist (greater than 6)
             //No target in hact chp is ever greater than 6 in vanilla game so we can do this funny party trick for Y5 Co-op
             CPP.PatchMemory(CPP.PatternSearch("FF 90 ? ? ? ? 85 C0 75 ? 48 8B 03 48 8B CB FF 90 ? ? ? ? 85 C0 0F 85"), new byte[] { 0xB8, 0x01, 0x0, 0x0, 0x0, 0x90 });
@@ -149,6 +154,8 @@ namespace Y5Coop
 
             Mod.engine.EnableHook(ProcessHActCharacters);
             Mod.engine.EnableHook(PrepareHAct);
+
+            Mod.engine.EnableHook(m_origHactEndPlay);
 
         }
 
@@ -181,6 +188,15 @@ namespace Y5Coop
             // ActionFighterManager.SetPlayer(0);
 
             return m_invokeHactOrig(a1, unknown);
+        }
+
+        private static HactEndNodePlay m_origHactEndPlay;
+        static IntPtr HactEndNode_Play(IntPtr a1)
+        {
+            IntPtr result = m_origHactEndPlay(a1);
+            PlayerInput.OnInputCalibrated(PlayerInput.Player1InputType, true);
+
+            return result;
         }
 
         unsafe static ulong HActManager_PrepareHAct(IntPtr hactMan, string hactName, ulong idk3, ulong idk4, ulong idk5, ulong idk6)
@@ -242,7 +258,6 @@ namespace Y5Coop
 
             if (NextHActIsByCoopPlayer)
             {
-
                 //Override original player 1 values with player 2 data
                 Vector4* chara1RegisterPos = (Vector4*)(registersStart + 0x10);
                 ushort* chara1RegisterRotY = (ushort*)(registersStart + 0x38);
@@ -255,6 +270,7 @@ namespace Y5Coop
                 chara1RegisterUID->UID = 0xBEEF;
 
                 LastHActPerformer = fighter;
+                Player2IsPerformingHAct = true;
             }
             else
             {

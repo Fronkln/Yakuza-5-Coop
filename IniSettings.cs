@@ -54,7 +54,8 @@ namespace Y5Coop
             if (!string.IsNullOrEmpty(missions))
                 Mod.BlacklistedMissions = missions.Split(';').Select(x => int.Parse(x.Trim())).ToArray();
 
-            Mod.DebugInput = byte.Parse(ini.GetValue("DebugLogInput", "Bindings", "0")) == 1;
+            string debugInput = ini.GetValue("DebugLogInput", "Bindings", "0").Trim();
+            Mod.DebugInput = byte.Parse(debugInput) == 1;
 
             PlayerInput.Player1InputType = InputDeviceType.All;
 

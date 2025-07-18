@@ -97,7 +97,7 @@ namespace Y5Coop
                 Environment.Exit(0);
             }
 
-            OE.RegisterJob(Update, 10);
+            OE.RegisterJob(Update, (JobPhase)10);
 
             Thread thread = new Thread(InputThread);
             thread.Start();
