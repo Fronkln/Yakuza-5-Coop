@@ -91,9 +91,9 @@ namespace Y5Coop
             var y5lib =   AppDomain.CurrentDomain.GetAssemblies().
            SingleOrDefault(assembly => assembly.GetName().Name == "Y5Lib.NET");
 
-            if (y5lib.GetName().Version < new Version(1, 0, 1, 6))
+            if (y5lib.GetName().Version < new Version(1, 0, 1, 7))
             {
-                MessageBox(IntPtr.Zero, "Current version of Intertwined Fates requires Y5Lib version 0.16 and greater. Please update Y5Lib from Libraries tab on the top left of Shin Ryu Mod Manager.\nRefer to INSTALLATION segment in NexusMods description if you are unsure of what to do.", "Need Update", 0);
+                MessageBox(IntPtr.Zero, "Current version of Intertwined Fates requires Y5Lib version 0.17 and greater. Please update Y5Lib from Libraries tab on the top left of Shin Ryu Mod Manager.\nRefer to INSTALLATION segment in NexusMods description if you are unsure of what to do.", "Need Update", 0);
                 Environment.Exit(0);
             }
 
@@ -367,13 +367,12 @@ namespace Y5Coop
             else
             {
                 if (ActionFighterManager.IsFighterPresent(0))
-                {
-                    /*
+                {                  
+                    NormalUpdate();
+
                     if (IsChase())
                         ChaseUpdate();
-                    else
-                    */
-                    NormalUpdate();
+
                     PlayerAssignmentUpdate();
                 }
                 else
@@ -394,6 +393,29 @@ namespace Y5Coop
 
                 CurrentMissionTime = 0;
                 m_currentMission = mission;
+            }
+        }
+
+
+        private void ChaseUpdate()
+        {
+            if (ActionHActManager.Current.Pointer != IntPtr.Zero)
+                return;
+
+            if(CurrentMissionTime > 0.1f && CurrentMissionTime < 10)
+            {
+                if(CoopPlayer != null)
+                {
+                    Fighter player = ActionFighterManager.GetFighter(0);
+
+                    float dist = Vector3.Distance(CoopPlayer.Position, player.Position);
+
+                    if(dist < 0.1f)
+                    {
+                        OE.LogInfo("Player 2 accidentally spawned too close to player 1 on chase. Forcefully repositioning");
+                        CoopPlayer.HumanMotion.SetPosition(player.Position + (-player.HumanMotion.Matrix.ForwardDirection * 0.3f));
+                    }
+                }    
             }
         }
 
@@ -608,10 +630,12 @@ namespace Y5Coop
                 {
                     if (!m_remakePlayer || (m_remakePlayer && !ActionFighterManager.IsFighterPresent(m_oldCoopIdx)))
                     {
-
-                        if(!m_remakePlayer)
+                        if(!m_remakePlayer && !m_spawningWithDelay)
                         {
                             bool shouldSpawnWithDelay = (IsBattle() || IsFreeroam()) && !IsEncounter();
+
+                            if (IsChase()|| IsDance())
+                                shouldSpawnWithDelay = false;
 
                             //Spawn player with a slight delay
                             if (shouldSpawnWithDelay && !m_spawningWithDelay)
@@ -723,7 +747,7 @@ namespace Y5Coop
 
                 uint mission = SequenceManager.MissionID;
 
-                if (mission == 300 || mission == 409 || mission == 403)
+                if (mission == 300 || mission == 409 || mission == 403 || mission == 410)
                     return false;
             }
 
@@ -948,7 +972,7 @@ namespace Y5Coop
             if (!m_remakePlayer)
             {
                 if (IsChase())
-                    inf.spawnPosition = ActionFighterManager.Player.Position + -ActionFighterManager.Player.HumanMotion.Matrix.ForwardDirection;
+                    inf.spawnPosition = ActionFighterManager.Player.Position + ActionFighterManager.Player.HumanMotion.Matrix.ForwardDirection * 2 + (-ActionFighterManager.Player.HumanMotion.Matrix.LeftDirection * 0.5f);
                 else
                     inf.spawnPosition = ActionFighterManager.Player.Position + new Vector3(1, 0, 0);
             }
