@@ -45,7 +45,8 @@ namespace Y5Coop
 
             int playerIdx = ActionFighterManager.Player.Index;
             //Keep focus on player 1
-            ActionFighterManager.SetPlayer(0);
+            if(!Mod.IsHarukaBattle())
+                ActionFighterManager.SetPlayer(0);
 
             CameraBase camera = new CameraBase() { Pointer = cam };
 

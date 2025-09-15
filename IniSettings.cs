@@ -18,6 +18,8 @@ namespace Y5Coop
         {
             Ini ini = new Ini(IniPath);
 
+            OE.LogInfo("Reading ini, path: " + IniPath);
+
             Mod.CoopPlayerCommandset = ini.GetValue("Player2Moveset", "Combat", "");
             Mod.AllyMode = byte.Parse(ini.GetValue("AIControlled", "General", "0")) == 1;
             Mod.DestroyP2OnCCC = byte.Parse(ini.GetValue("DestroyOnTalk", "General", "0")) == 1;

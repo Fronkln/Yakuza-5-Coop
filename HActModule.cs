@@ -35,7 +35,6 @@ namespace Y5Coop
 
         //Never set the co-op player as ZA_HUPLAYER
         private static HashSet<string> m_hactCoopBlacklist = new HashSet<string>();
-        private static HashSet<string> m_coopHacts = new HashSet<string>();
 
         public static Fighter LastHActPerformer;
 
@@ -80,7 +79,7 @@ namespace Y5Coop
         {
             if(!Mod.AllyMode)
             {
-                if (Mod.m_coopPlayerIdx > 0)
+                if (Mod.CoopPlayerIdx > 0)
                 {
                     if (Player2IsPerformingHAct)
                         ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
@@ -179,7 +178,7 @@ namespace Y5Coop
         {
             NextHActIsByCoopPlayer = false;
 
-            if (Mod.CoopPlayer == null || !ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
+            if (Mod.CoopPlayer == null || !ActionFighterManager.IsFighterPresent(Mod.CoopPlayerIdx))
                 return m_invokeHactOrig(a1, unknown);
 
             if (Mod.CoopPlayer.Index > 0 && ActionFighterManager.Player.Pointer == Mod.CoopPlayer.Pointer)
@@ -207,10 +206,10 @@ namespace Y5Coop
             //if (ReplacePlayerWithPlayer2Once && Mod.m_coopPlayerIdx < -1)
             // ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
 
-            if (Mod.m_coopPlayerIdx < 0)
+            if (Mod.CoopPlayerIdx < 0)
                 return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
 
-            if (!ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx))
+            if (!ActionFighterManager.IsFighterPresent(Mod.CoopPlayerIdx))
                 return PrepareHAct(hactMan, hactName, idk3, idk4, idk5, idk6);
 
             //override into coop version of the hact if it exists
@@ -239,7 +238,7 @@ namespace Y5Coop
 
             EntityUID* chara1RegisterUID = (EntityUID*)(registersStart + 0x24);
 
-            if (Mod.m_coopPlayerIdx < 0)
+            if (Mod.CoopPlayerIdx < 0)
             {
                 return ProcessHActCharacters(hactMan, idk1, idk2, idk3);
             }
@@ -262,7 +261,7 @@ namespace Y5Coop
                 Vector4* chara1RegisterPos = (Vector4*)(registersStart + 0x10);
                 ushort* chara1RegisterRotY = (ushort*)(registersStart + 0x38);
 
-                Fighter fighter = ActionFighterManager.GetFighter(Mod.m_coopPlayerIdx);
+                Fighter fighter = ActionFighterManager.GetFighter(Mod.CoopPlayerIdx);
 
                 *chara1RegisterPos = fighter.Position;
                 *chara1RegisterRotY = fighter.RotationY;
@@ -280,7 +279,7 @@ namespace Y5Coop
 
                 //Register the coop player onto hacts.
                 //Any hact that includes ZA_HUCOOP0 character will now have the coop player present
-                RegisterFighterOnHAct(hactID, "ZA_HUCOOP0", Mod.m_coopPlayerIdx, 1);
+                RegisterFighterOnHAct(hactID, "ZA_HUCOOP0", Mod.CoopPlayerIdx, 1);
 
                 LastHActPerformer = ActionFighterManager.GetFighter(0);
             }

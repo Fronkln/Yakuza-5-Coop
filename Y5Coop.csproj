@@ -74,6 +74,8 @@
     <Compile Include="IniSettings.cs" />
     <Compile Include="Mod.cs" />
     <Compile Include="ModMath.cs" />
+    <Compile Include="Patches\CombatPatches.cs" />
+    <Compile Include="Patches\FighterPatches.cs" />
     <Compile Include="PlayerInput.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -328,6 +328,7 @@ namespace Y5Coop
         //If we do not route this to player1, game freezes when interacting with CCC
         //Bizzare bug that exists since Kenzan/Y3
         //Not in Yakuza 0 though! my goat!
+        //21.07.2025 Yakuza 0 also has this problem.
         static bool FighterUnknownInputUpdate(void* fighter, ulong arg1, ulong arg2)
         {          
             return m_origUnknownFighterInputUpdate.Invoke((void*)ActionFighterManager.GetFighter(0).Pointer, arg1, arg2);
@@ -363,7 +364,7 @@ namespace Y5Coop
 
         private static long UpdateData(IntPtr addr, long idk2, long idk3, long idk4)
         {
-            bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
+            bool playerExists = Mod.CoopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.CoopPlayerIdx);
 
             if (!playerExists || ActionManager.IsPaused())
                 return m_updateDataOrig(addr, idk2, idk3, idk4);
@@ -417,7 +418,7 @@ namespace Y5Coop
         {
             long result = m_updateDataOrig2(addr, idk2, idk3, idk4);
 
-            bool playerExists = Mod.m_coopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.m_coopPlayerIdx);
+            bool playerExists = Mod.CoopPlayerIdx > -1 && ActionFighterManager.IsFighterPresent(Mod.CoopPlayerIdx);
 
             if (!playerExists || ActionManager.IsPaused())
                 return result;
@@ -492,11 +493,11 @@ namespace Y5Coop
             if (Mod.CoopPlayer.Pointer == fighter.Pointer)
             {
 
-                if (Mod.IsBattle())
+                if ((Mod.IsBattle() && !Mod.IsHarukaBattle()) || (Mod.IsHarukaBattle() && Mod.CurrentMissionTime < 2.5f))
                 {
                     if(Mod.CoopPlayer.ModeManager.Current.Name == "HActBattleReady")
                     {
-                        ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                        ActionFighterManager.SetPlayer(Mod.CoopPlayerIdx);
                     }
                     else
                     {
@@ -506,7 +507,7 @@ namespace Y5Coop
 
                             if (m_playerHeavyInputTime <= 0.1f)
                             {
-                                ActionFighterManager.SetPlayer(Mod.m_coopPlayerIdx);
+                                ActionFighterManager.SetPlayer(Mod.CoopPlayerIdx);
                                 Player2WantHAct = true;
                             }
                             else
