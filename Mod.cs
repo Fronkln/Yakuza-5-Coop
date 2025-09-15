@@ -64,7 +64,7 @@ namespace Y5Coop
         public static bool DontRespawnPlayerThisMissionDoOnce = false;
         private static bool m_battleStartRecreatePlayer = false;
         private static bool m_btlstDecided = false;
-        private static MotionID m_chosenBtlst;
+        public static MotionID ChosenBtlst;
         private static uint m_currentMission;
         private delegate IntPtr CActionFighterManagerGetFighterByUID(IntPtr fighterMan, uint serial);
 
@@ -526,7 +526,7 @@ namespace Y5Coop
                             {
                                 FighterMode mode = CoopPlayer.ModeManager.Current;
                                 int* battleStartAnimationID = (int*)(mode.Pointer + 0x90);
-                                *battleStartAnimationID = (int)m_chosenBtlst;
+                                *battleStartAnimationID = (int)ChosenBtlst;
 
                                 m_btlstDecided = true;
                             }
@@ -760,11 +760,11 @@ namespace Y5Coop
 
             if (!m_btlstDecided)
             {
-                m_chosenBtlst = p2BattleStartAnims[new Random().Next(0, p2BattleStartAnims.Length)];
+                ChosenBtlst = p2BattleStartAnims[new Random().Next(0, p2BattleStartAnims.Length)];
                 m_btlstDecided = true;
             }
 
-            inf.battleStartAnim.Set(m_chosenBtlst.ToString());
+            inf.battleStartAnim.Set(ChosenBtlst.ToString());
 
             if (AllyMode)
             {
@@ -808,8 +808,6 @@ namespace Y5Coop
                 inf.Voicer = 87;
                 inf.N00004552 = 255;
             }
-
-            inf.FighterType = playerType;
 
 
             if (!m_remakePlayer)

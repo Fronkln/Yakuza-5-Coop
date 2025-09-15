@@ -68,6 +68,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Camera.cs" />
+    <Compile Include="CoopPlayerInstance.cs" />
     <Compile Include="DancingCoopPlayer.cs" />
     <Compile Include="HActModule.cs" />
     <Compile Include="Ini.cs" />
