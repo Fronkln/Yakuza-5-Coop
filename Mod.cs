@@ -75,10 +75,6 @@ namespace Y5Coop
                                         MotionID.E_SUG_CMB_a_01,
 };
 
-        private delegate ulong CDriveVehicleBaseConstructor(IntPtr a1, IntPtr a2, int a3, IntPtr a4, IntPtr a5);
-
-        CDriveVehicleBaseConstructor m_origVehicConstructor;
-
         public override void OnModInit()
         {
             base.OnModInit();
@@ -87,7 +83,7 @@ namespace Y5Coop
 
             OE.LogInfo("Y5 Coop Init Start");
 
-            var y5lib =   AppDomain.CurrentDomain.GetAssemblies().
+            var y5lib = AppDomain.CurrentDomain.GetAssemblies().
            SingleOrDefault(assembly => assembly.GetName().Name == "Y5Lib.NET");
 
             if (y5lib.GetName().Version < new Version(1, 0, 1, 7))
@@ -103,29 +99,22 @@ namespace Y5Coop
             Thread thread = new Thread(InputThread);
             thread.Start();
 
-            //Warning: Really bad pattern
-            m_origVehicConstructor = engine.CreateHook<CDriveVehicleBaseConstructor>(CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 90 48 8D 05 ? ? ? ? 48 89 03 48 8D 8B ? ? ? ? 48 8B D3 E8 ? ? ? ? 90 33 FF"))), CDriveVehicleBase_Constructor);
             m_origGetEntityByUID = engine.CreateHook<CActionFighterManagerGetFighterByUID>((IntPtr)0x1408D33C0, ActionEntityManager_GetEntityByUID);
-            m_origGetFighterByUID = engine.CreateHook<CActionFighterManagerGetFighterByUID>(CPP.ReadCall(CPP.ReadCall(CPP.PatternSearch("E8 ? ? ? ? 48 85 C0 0F 84 ? ? ? ? 48 8B 10 48 8B C8 8B 7B"))), ActionFighterManager_GetFighterByUID);
 
             Camera.m_updateFuncOrig = engine.CreateHook<Camera.CCameraFreeUpdate>(CPP.PatternSearch("4C 8B DC 55 41 56 49 8D AB 28 FB FF FF"), Camera.CCameraFree_Update);
+
+            IniSettings.Read();
 
             HActModule.Init();
             PlayerInput.Init();
 
-            IniSettings.Read();
-
             FighterPatches.Init();
+            ActionFighterManagerPatches.Init();
+            MGDrivePatches.Init();
+            MGHandshakePatches.Init();
 
             engine.EnableHook(Camera.m_updateFuncOrig);
-            engine.EnableHook(m_origVehicConstructor);
-            engine.EnableHook(m_origGetFighterByUID);
             engine.EnableHook(m_origGetEntityByUID);
-
-            //Replace handshake guard with Ichiban
-            IntPtr handshakeGuardModelName = CPP.ResolveRelativeAddress(CPP.PatternSearch("8D 4A 06 E8 ? ? ? ? E8 ? ? ? ? B9 50 17 00 00 E8") + 0x52, 7);
-            CPP.PatchMemory(handshakeGuardModelName, System.Text.Encoding.ASCII.GetBytes("c_am_ichiban_tx_on"));
-
 
             //dont ask
             System.Timers.Timer timer = new System.Timers.Timer();
@@ -142,60 +131,10 @@ namespace Y5Coop
             OE.LogInfo("Y5 Coop Init End");
         }
 
-
-        unsafe ulong CDriveVehicleBase_Constructor(IntPtr a1, IntPtr a2, int a3, IntPtr a4, IntPtr a5)
-        {
-            IntPtr kiryuOffset = IntPtr.Zero;
-            IntPtr driver1StartOffset = IntPtr.Zero;
-
-            string driverName = Marshal.PtrToStringAnsi(a2 + 0x14C);
-            string driverName2 = Marshal.PtrToStringAnsi(a2 + 0xFC);
-
-            if (!driverName.Contains("kiryu") && !driverName2.Contains("kiryu"))
-                return m_origVehicConstructor(a1, a2, a3, a4, a5);
-
-
-            if(driverName.Contains("kiryu"))
-            {
-                kiryuOffset = a2 + 0x14c;
-            }
-
-            if(driverName2.Contains("kiryu"))
-            {
-                kiryuOffset = a2 + 0xFC;
-            }
-
-            if(kiryuOffset != IntPtr.Zero)
-            {
-                //Find empty passengers for the car. If the first seat is empty, put him there
-                //Otherwise, try the second seat. And if that is full too Ichiban can get lost
-                if (Marshal.ReadByte(kiryuOffset + 72) == 0)
-                    driver1StartOffset = kiryuOffset + 72;
-                else if (Marshal.ReadByte(kiryuOffset + 144) == 0)
-                    driver1StartOffset = kiryuOffset + 144;
-            }
-
-            if(driver1StartOffset != IntPtr.Zero)
-            {
-                int* flags = (int*)(driver1StartOffset + 64);
-
-                Marshal.Copy(new byte[32], 0, driver1StartOffset, 32);
-
-                string model = GetModelForPlayer2();
-                byte[] modelBytes = System.Text.Encoding.ASCII.GetBytes(model);
-                Marshal.Copy(modelBytes, 0, driver1StartOffset, model.Length);
-
-                *flags = 5929;
-            }
-
-            return m_origVehicConstructor(a1, a2, a3, a4, a5);
-        }
-   
-
         private static CActionFighterManagerGetFighterByUID m_origGetEntityByUID;
         IntPtr ActionEntityManager_GetEntityByUID(IntPtr entityManager, uint serial)
         {
-            if(serial == 0xBEEF)
+            if (serial == 0xBEEF)
             {
                 return CoopPlayer.Pointer;
             }
@@ -203,28 +142,6 @@ namespace Y5Coop
             return m_origGetEntityByUID(entityManager, serial);
         }
 
-        //Bizzare bug that causes UIDs to not work by itself sometimes
-        //Its up to us to tell the game to quit being fuckin stupid!
-        private static CActionFighterManagerGetFighterByUID m_origGetFighterByUID;
-        IntPtr ActionFighterManager_GetFighterByUID(IntPtr fighterManager, uint serial)
-        {
-
-            IntPtr result = m_origGetFighterByUID(fighterManager, serial);
-
-            if (result == IntPtr.Zero)
-            {
-                //0XBEEF is our special UID that shall always refer to the co-op player.
-                //Our hooked HActManager_ProcessHActCharacters will register the co-op player's serial as 0xBEEF
-                //Giving Kasuga a consistent UID that can never fail.
-                if (serial == 0XBEEF && ActionFighterManager.IsFighterPresent(CoopPlayerIdx) && CoopPlayer != null)
-                    return CoopPlayer.Pointer;
-
-                if (ActionFighterManager.IsFighterPresent(CoopPlayerIdx) && CoopPlayer != null && serial == CoopPlayer.UID.Serial)
-                  return CoopPlayer.Pointer;
-            }
-
-            return m_origGetFighterByUID(fighterManager, serial);
-        }
         public static void Reset()
         {
             CoopPlayerIdx = -1;
@@ -292,10 +209,10 @@ namespace Y5Coop
                 {
                     CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player2InputType));
 
-                    if(CoopPlayerIdx > 0)
+                    if (CoopPlayerIdx > 0)
                         ActionFighterManager.GetFighter(0).InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(PlayerInput.Player1InputType));
                 }
-                
+
 
                 if (Vector3.Distance(CoopPlayer.Position, ActionFighterManager.GetFighter(0).Position) >= TeleportDistance)
                 {
@@ -303,7 +220,7 @@ namespace Y5Coop
                     return;
                 }
 
-                if(!AllyMode)
+                if (!AllyMode)
                     PlayerInput.Calibrate();
             }
             else
@@ -311,20 +228,18 @@ namespace Y5Coop
 
             int playerID = Player.GetCurrentID();
 
-            if(m_playerID != playerID)
+            if (m_playerID != playerID)
             {
                 OnPlayerIDChange(m_playerID, playerID);
                 m_playerID = playerID;
             }
 
-            if (IsDrive())
-                DriveUpdate();
-            else if (IsDance())
+            if (IsDance())
                 DanceUpdate();
             else
             {
                 if (ActionFighterManager.IsFighterPresent(0))
-                {                  
+                {
                     NormalUpdate();
 
                     if (IsChase())
@@ -368,83 +283,23 @@ namespace Y5Coop
             if (ActionHActManager.Current.Pointer != IntPtr.Zero)
                 return;
 
-            if(CurrentMissionTime > 0.1f && CurrentMissionTime < 10)
+            if (CurrentMissionTime > 0.1f && CurrentMissionTime < 10)
             {
-                if(CoopPlayer != null)
+                if (CoopPlayer != null)
                 {
                     Fighter player = ActionFighterManager.GetFighter(0);
 
                     float dist = Vector3.Distance(CoopPlayer.Position, player.Position);
 
-                    if(dist < 0.1f)
+                    if (dist < 0.1f)
                     {
                         OE.LogInfo("Player 2 accidentally spawned too close to player 1 on chase. Forcefully repositioning");
                         CoopPlayer.HumanMotion.SetPosition(player.Position + (-player.HumanMotion.Matrix.ForwardDirection * 0.3f));
                     }
-                }    
-            }
-        }
-
-        private void DriveUpdate()
-        {
-            return;
-            if (m_awaitingSpawn)
-            {
-                CoopPlayerHandle = new EntityHandle(ActionFighterManager.GetFighter(CoopPlayerIdx));
-                CoopPlayer = ActionFighterManager.GetFighter(CoopPlayerIdx);
-                m_awaitingSpawn = false;
-            }
-
-            if (ActionFighterManager.IsFighterPresent(0))
-            {
-                if(!m_awaitingSpawn && !CoopPlayerHandle.IsValid())
-                {
-                    IntPtr inputUpdateAddr = CPP.PatternSearch("49 63 C7 49 0F 45 D6 48 69 C8 ? ? ? ? 48 03 CB E8 ? ? ? ? 8B 84 24 D0 01 00 00");
-
-                    DisposeInfo inf = new DisposeInfo();
-                    inf.N000002CE = 64904;
-                    inf.N00000520 = 52;
-                    inf.N00000521 = 11;
-                    inf.modelName.Set(GetModelForPlayer2());
-                    inf.N00000549 = 300;
-                    inf.N0000054A = 100;
-                    inf.N00004547 = -1;
-                    inf.N0000454A = 4;
-                    inf.FighterType = NPCType.Mannequin;
-                    inf.N0000454B = 10;
-                    inf.Voicer = 87;
-                    inf.N00004552 = 25;
-
-                    inf.spawnPosition = ActionFighterManager.Player.Position; // new Vector3(76.92f, 0f, -16.21f);
-                    inf.N0000054E = (uint)ActionFighterManager.Player.HumanMotion.GetAngleY();
-
-                    inf.battleStartAnim.Set("eMID_NONE");
-                    inf.N0000453C = -1;
-
-                    CoopPlayerIdx = ActionFighterManager.SpawnCharacter(inf);
-                    m_awaitingSpawn = true;
-                }
-                else
-                {
-                    Vector3 pos = ActionFighterManager.Player.Position + (ActionFighterManager.Player.HumanMotion.Matrix.LeftDirection * 0.4f);
-                    CoopPlayer.HumanMotion.SetPosition(pos);
-                    CoopPlayer.HumanMotion.SetAngleY((short)ActionFighterManager.Player.RotationY);
-
-                    //  if (CoopPlayer.HumanMotion.CurrentAnimation != MotionID.M_NML_MOV_sitchr_lp)
-                    // CoopPlayer.HumanMotion.NextAnimation = MotionID.M_NML_MOV_sitchr_lp;
-
-                    Fighter player = ActionFighterManager.Player;
-
-                    if (CoopPlayer.HumanMotion.CurrentAnimation != MotionID.F_NML_SET_stand_dance_01)
-                        CoopPlayer.HumanMotion.NextAnimation = MotionID.F_NML_SET_stand_dance_01;
-
-                    CoopPlayer.HumanMotion.Flags = 1073741824;//player.HumanMotion.Flags;
-                    CoopPlayer.HumanMotion.Mode = 0;
-                    CoopPlayer.HumanMotion.AnimationTime = player.HumanMotion.AnimationTime;
-                    CoopPlayer.HumanMotion.PreviousAnimationTime = player.HumanMotion.PreviousAnimationTime;
                 }
             }
         }
+
         private void DanceUpdate()
         {
             if (m_awaitingSpawn)
@@ -453,13 +308,13 @@ namespace Y5Coop
                 CoopPlayer = ActionFighterManager.GetFighter(CoopPlayerIdx);
                 m_awaitingSpawn = false;
 
-                if(ActionLiveBattleManager.Current.Pointer != IntPtr.Zero)
+                if (ActionLiveBattleManager.Current.Pointer != IntPtr.Zero)
                     ActionLiveBattleManager.Current.HumanMotion.SetPosition(ActionLiveBattleManager.Current.Position + -ActionLiveBattleManager.Current.HumanMotion.Matrix.LeftDirection);
-                }
+            }
 
-                if (ActionPrincessLeagueManager.Player.Pointer != IntPtr.Zero)
-                {
-                    ActionPrincessLeagueManager.Player.HumanMotion.SetPosition(ActionPrincessLeagueManager.Player.Position + -ActionPrincessLeagueManager.Player.HumanMotion.Matrix.LeftDirection * 0.5f);
+            if (ActionPrincessLeagueManager.Player.Pointer != IntPtr.Zero)
+            {
+                ActionPrincessLeagueManager.Player.HumanMotion.SetPosition(ActionPrincessLeagueManager.Player.Position + -ActionPrincessLeagueManager.Player.HumanMotion.Matrix.LeftDirection * 0.5f);
             }
 
             Human dancer = new Human();
@@ -474,7 +329,7 @@ namespace Y5Coop
                 if (dancer.Pointer == IntPtr.Zero)
                     dancer = ActionDanceEventManager.Player;
 
-                if(!AllyMode)
+                if (!AllyMode)
                     PlayerInput.EnableInputPatches();
             }
             else if (isLiveBattle)
@@ -487,7 +342,7 @@ namespace Y5Coop
                 if (dancer.Pointer == IntPtr.Zero)
                     dancer = ActionLiveBattleManager.Current;
 
-                if(!AllyMode)
+                if (!AllyMode)
                     PlayerInput.DisableInputPatches();
             }
 
@@ -507,7 +362,7 @@ namespace Y5Coop
             if (ActionFighterManager.IsFighterPresent(0))
             {
 
-                if(isLiveBattle && ActionHActManager.Current.Pointer != IntPtr.Zero)
+                if (isLiveBattle && ActionHActManager.Current.Pointer != IntPtr.Zero)
                 {
                     //Okay Ichiban, you had your moment
                     ActionFighterManager.DestroyFighter(0);
@@ -530,11 +385,11 @@ namespace Y5Coop
                 if (coopDancer.HumanMotion.CurrentAnimation != dancer.HumanMotion.CurrentAnimation)
                     coopDancer.HumanMotion.NextAnimation = dancer.HumanMotion.CurrentAnimation;
 
-                if(!isLiveBattle)
-                coopDancer.HumanMotion.SetPosition(dancer.Position + dancerMtx.LeftDirection * 1.1f + -dancerMtx.ForwardDirection * 0.75f);
+                if (!isLiveBattle)
+                    coopDancer.HumanMotion.SetPosition(dancer.Position + dancerMtx.LeftDirection * 1.1f + -dancerMtx.ForwardDirection * 0.75f);
                 else
                     coopDancer.HumanMotion.SetPosition(dancer.Position + dancerMtx.LeftDirection * 0.5f);
-                
+
                 coopDancer.HumanMotion.Flags = dancer.HumanMotion.Flags;
                 coopDancer.HumanMotion.Mode = dancer.HumanMotion.Mode;
                 coopDancer.HumanMotion.AnimationTime = dancer.HumanMotion.AnimationTime;
@@ -596,11 +451,11 @@ namespace Y5Coop
                 {
                     if (!m_remakePlayer || (m_remakePlayer && !ActionFighterManager.IsFighterPresent(m_oldCoopIdx)))
                     {
-                        if(!m_remakePlayer && !m_spawningWithDelay)
+                        if (!m_remakePlayer && !m_spawningWithDelay)
                         {
                             bool shouldSpawnWithDelay = (IsBattle() || IsFreeroam()) && !IsEncounter();
 
-                            if (IsChase()|| IsDance())
+                            if (IsChase() || IsDance())
                                 shouldSpawnWithDelay = false;
 
                             //Spawn player with a slight delay
@@ -612,7 +467,7 @@ namespace Y5Coop
                                 OE.LogInfo("Spawning player 2 with " + m_spawnDelay + " seconds of delay.");
                             }
                         }
-          
+
                         if (m_spawnDelay > 0 && m_spawningWithDelay)
                             return;
 
@@ -644,19 +499,19 @@ namespace Y5Coop
 
                     if (!AllyMode)
                     {
-                            if (ActionFighterManager.Player.HumanMotion.CurrentAnimation.ToString().Contains("btlst"))
+                        if (ActionFighterManager.Player.HumanMotion.CurrentAnimation.ToString().Contains("btlst"))
+                        {
+                            if (!m_battleStartRecreatePlayer)
                             {
-                                if (!m_battleStartRecreatePlayer)
-                                {
                                 if (!IsEncounter())
                                     DestroyAndRecreatePlayer2();
                                 else
                                     CoopPlayer.HumanMotion.NextAnimation = p2BattleStartAnims[new Random().Next(0, p2BattleStartAnims.Length)];
                                 m_battleStartRecreatePlayer = true;
-                                    ActionFighterManager.SetPlayer(CoopPlayerIdx);
-                                }
+                                ActionFighterManager.SetPlayer(CoopPlayerIdx);
                             }
-                        
+                        }
+
                     }
                     if (CoopPlayer != null && ActionFighterManager.IsFighterPresent(CoopPlayerIdx))
                     {
@@ -664,7 +519,7 @@ namespace Y5Coop
                         bool isBtlSt = modeName == "WaitStartMotion" || modeName == "NoCutEncountStartMotion";
                         string currentHactName = ActionHActManager.Current.Name;
                         bool isStartHact = currentHactName.Contains("auth") || currentHactName.Contains("btlst");
-                 
+
                         if (isBtlSt)
                         {
                             unsafe
@@ -680,7 +535,7 @@ namespace Y5Coop
                 }
                 else
                 {
-                    if(DestroyP2OnCCC && ActionCCCManager.isActive && CoopPlayer != null && ActionFighterManager.IsFighterPresent(CoopPlayerIdx))
+                    if (DestroyP2OnCCC && ActionCCCManager.isActive && CoopPlayer != null && ActionFighterManager.IsFighterPresent(CoopPlayerIdx))
                     {
                         DestroyPlayer2();
                     }
@@ -698,7 +553,7 @@ namespace Y5Coop
             if (CoopPlayerCommandset == "ichiban" && !IsIchibanMovesetEnabled)
                 return;
 
-             CoopPlayer.ModeManager.SetCommandset(CoopPlayerCommandset);
+            CoopPlayer.ModeManager.SetCommandset(CoopPlayerCommandset);
         }
 
         public bool CanCreate()
@@ -706,7 +561,7 @@ namespace Y5Coop
             if (DestroyP2OnCCC && ActionCCCManager.isActive)
                 return false;
 
-            if(AllyMode)
+            if (AllyMode)
             {
                 if (IsHunting())
                     return false;
@@ -851,12 +706,12 @@ namespace Y5Coop
                         if (CoopPlayer != null && ActionFighterManager.IsFighterPresent(CoopPlayerIdx))
                             CoopPlayer.InputController.SetSlot(ActionInputManager.GetInputDeviceSlot(InputDeviceType.All));
 
-                    if(OE.IsKeyDown(VirtualKey.H))
+                    if (OE.IsKeyDown(VirtualKey.H))
                     {
                         ActionMotionManager.LoadImportantResources(true);
                         OE.LogInfo("load important resources");
                     }
-                        //FixupTest();
+                    //FixupTest();
                 }
 #endif
             }
@@ -870,7 +725,7 @@ namespace Y5Coop
             PlayerInput.ResetPlayer1Input();
 
             if (!AllyMode)
-             PlayerInput.ResetPlayer2Input();
+                PlayerInput.ResetPlayer2Input();
 
             ActionFighterManager.DestroyFighter(CoopPlayerIdx);
             Reset();
@@ -903,7 +758,7 @@ namespace Y5Coop
             DisposeInfo inf = new DisposeInfo();
             inf.modelName.Set(GetModelForPlayer2());
 
-            if(!m_btlstDecided)
+            if (!m_btlstDecided)
             {
                 m_chosenBtlst = p2BattleStartAnims[new Random().Next(0, p2BattleStartAnims.Length)];
                 m_btlstDecided = true;
@@ -1016,13 +871,13 @@ namespace Y5Coop
             m_awaitingSpawn = true;
         }
 
-        private static string GetModelForPlayer2()
+        public static string GetModelForPlayer2()
         {
             string playerModel = ActionFighterManager.Player.Model;
             int stageID = ActionStageManager.StageID;
 
             //haruka idol maps where he should be in his business attire
-            if(stageID == 131 || stageID == 149)
+            if (stageID == 131 || stageID == 149)
                 return "c_cm_ichiban_tx_on";
 
             if (playerModel.Contains("naked"))
@@ -1032,13 +887,13 @@ namespace Y5Coop
             if (playerModel.Contains("sinada"))
                 return "c_cm_ichiban_sode";
 
-                if (playerModel.Contains("saejima_g"))
+            if (playerModel.Contains("saejima_g"))
                 return "c_cm_ichiban_g";
 
-            if(playerModel == "c_cw_haruka_w")
+            if (playerModel == "c_cw_haruka_w")
                 return "c_cm_ichiban_tx_on";
 
-            if(playerModel == "c_aw_haruka_lesson")
+            if (playerModel == "c_aw_haruka_lesson")
                 return "c_cm_ichiban_haruka";
 
             if (playerModel.Contains("haruka"))
@@ -1073,7 +928,7 @@ namespace Y5Coop
             if (dancerModel.Contains("akiyama"))
                 return "c_cm_ichiban_sode";
 
-            if(ActionPrincessLeagueManager.Player.Pointer != IntPtr.Zero)
+            if (ActionPrincessLeagueManager.Player.Pointer != IntPtr.Zero)
             {
                 return "c_am_ichiban_idol_mg";
             }

@@ -74,8 +74,11 @@
     <Compile Include="IniSettings.cs" />
     <Compile Include="Mod.cs" />
     <Compile Include="ModMath.cs" />
+    <Compile Include="Patches\ActionFighterManagerPatches.cs" />
     <Compile Include="Patches\CombatPatches.cs" />
     <Compile Include="Patches\FighterPatches.cs" />
+    <Compile Include="Patches\MGDrivePatches.cs" />
+    <Compile Include="Patches\MGHandshakePatches.cs" />
     <Compile Include="PlayerInput.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
